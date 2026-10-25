@@ -1,0 +1,11 @@
+name: probe
+on: push
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -sSLO https://repo1.maven.org/maven2/net/jthink/jaudiotagger/3.0.1/jaudiotagger-3.0.1.jar
+          unzip -l jaudiotagger-3.0.1.jar | grep -i -E "opus|SupportedFileFormat" || true
+          unzip -o -q jaudiotagger-3.0.1.jar org/jaudiotagger/audio/SupportedFileFormat.class
+          strings org/jaudiotagger/audio/SupportedFileFormat.class | grep -i -E "^[a-z0-9]{2,5}$" | tr '\n' ' '
