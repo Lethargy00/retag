@@ -117,7 +117,7 @@ object Organizer {
         return try {
             Saved(organize(id, tags, Prefs.renameOn, Prefs.organizeOn), null)
         } catch (e: Exception) {
-            Saved(id, "tags saved, but couldn't rename/move: ${e.message ?: e.javaClass.simpleName}")
+            Saved(id, "Tags saved, but renaming/moving failed: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 

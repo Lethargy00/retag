@@ -54,6 +54,10 @@ import app.retag.Status
 import app.retag.data.Assignment
 import app.retag.data.Store
 import app.retag.data.TagData
+import app.retag.data.Naming
+import app.retag.data.Prefs
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import kotlin.math.roundToInt
@@ -165,6 +169,9 @@ private fun ItemRow(item: BatchItem, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = if (item.status == Status.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (item.warning.isNotBlank()) {
+                Text(item.warning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -304,6 +311,7 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                         )
                     }
                     Options(b)
+                    LayoutPreview(vm, b)
                     SwitchRow("Show every field that changes", showAll, true) { showAll = it }
                     when {
                         b.running -> OutlinedButton(onClick = { b.cancel() }, modifier = Modifier.fillMaxWidth()) { Text("Stop") }
@@ -515,6 +523,9 @@ private fun MatchRow(b: BatchController, a: Assignment, showAll: Boolean, onClic
             if (item != null && item.message.isNotBlank() && item.status != Status.Done) {
                 Text(item.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
+            if (item != null && item.warning.isNotBlank()) {
+                Text(item.warning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
         }
         when {
             a.track == null -> Unit
@@ -536,4 +547,93 @@ private fun BusyAndError(b: BatchController) {
         Text(it, style = MaterialTheme.typography.bodySmall)
     }
     b.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+/** One file's place after writing: folder levels below the music folder, and its file name. */
+private class Planned(val folders: List<String>, val name: String, val changed: Boolean, val order: Int)
+
+/** Shows (and lets you switch) renaming and Artist/Album folders, with the resulting folder tree. */
+@Composable
+private fun LayoutPreview(vm: AppViewModel, b: BatchController) {
+    val rename = Prefs.renameOn
+    val folders = Prefs.organizeOn
+    val plan = remember(b.assignments, b.items.toList(), b.files, rename, folders, Prefs.renamePattern, Prefs.folderPattern, b.overwrite) {
+        val out = b.assignments.map { a ->
+            val item = b.items.firstOrNull { it.key == a.path }
+            val cur = item?.path ?: a.path
+            val curName = Store.name(cur)
+            val ext = curName.substringAfterLast('.', "")
+            val curFolders = Store.relFolder(cur).split('/').filter { it.isNotBlank() }
+            val after = b.preview(a)
+            if (after == null) {
+                Planned(curFolders, curName, false, Int.MAX_VALUE)
+            } else {
+                val f = if (folders) Naming.folders(after) else curFolders
+                val base = if (rename) Naming.fileBase(after) else null
+                val n = base?.let { if (ext.isEmpty()) it else "$it.$ext" } ?: curName
+                val disc = after.disc.substringBefore('/').trim().toIntOrNull() ?: 0
+                val track = after.track.substringBefore('/').trim().toIntOrNull() ?: 999
+                Planned(f, n, f != curFolders || n != curName, disc * 1000 + track)
+            }
+        }
+        // Same name in the same folder: the app adds " (2)", " (3)"…
+        val seen = HashMap<String, Int>()
+        out.sortedWith(compareBy({ it.folders.joinToString("/").lowercase() }, { it.order }, { it.name.lowercase() })).map { p ->
+            val k = (p.folders + p.name).joinToString("/").lowercase()
+            val count = (seen[k] ?: 0) + 1
+            seen[k] = count
+            if (count == 1) {
+                p
+            } else {
+                val dot = p.name.lastIndexOf('.')
+                val nn = if (dot > 0) p.name.substring(0, dot) + " ($count)" + p.name.substring(dot) else p.name + " ($count)"
+                Planned(p.folders, nn, true, p.order)
+            }
+        }.groupBy { it.folders }
+    }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Files & folders", style = MaterialTheme.typography.titleSmall)
+            SwitchRow("Rename files  (${Prefs.renamePattern})", rename, !b.running) { Prefs.renameOn = it }
+            SwitchRow("Put in folders  (${Prefs.folderPattern})", folders, !b.running) { Prefs.organizeOn = it }
+            Text(
+                "These are the same switches as in Settings. Patterns can be changed there.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text("Result", style = MaterialTheme.typography.labelLarge)
+            for ((path, files) in plan) {
+                val levels = listOf(vm.folderName.ifBlank { "Music" }) + path
+                levels.forEachIndexed { i, name ->
+                    Text(
+                        "    ".repeat(i) + "📁 " + name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (i == levels.lastIndex) FontWeight.Medium else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val indent = "    ".repeat(levels.size)
+                for (f in files) {
+                    Text(
+                        indent + "♪ " + f.name + if (f.changed) "" else "  (unchanged)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (f.changed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            if (!rename && !folders) {
+                Text(
+                    "Files keep their names and stay where they are; only the tags inside change.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }

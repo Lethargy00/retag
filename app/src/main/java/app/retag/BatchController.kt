@@ -35,6 +35,8 @@ data class BatchItem(
     val fileName: String = Store.name(key),
     val status: Status = Status.Pending,
     val message: String = "",
+    /** Tags were saved but something else (renaming/moving) went wrong. */
+    val warning: String = "",
 )
 
 /**
@@ -102,11 +104,11 @@ class BatchController(
         if (albumMode) prefillAlbumQuery()
     }
 
-    private fun update(key: String, status: Status, message: String, newPath: String? = null) {
+    private fun update(key: String, status: Status, message: String, newPath: String? = null, warning: String = "") {
         val i = items.indexOfFirst { it.key == key }
         if (i >= 0) {
             val p = newPath ?: items[i].path
-            items[i] = items[i].copy(status = status, message = message, path = p, fileName = Store.name(p))
+            items[i] = items[i].copy(status = status, message = message, path = p, fileName = Store.name(p), warning = warning)
         }
     }
 
@@ -305,9 +307,8 @@ class BatchController(
                             }
                             tags to Organizer.save(path, tags, cover)
                         }
-                        var extra = if (fetchCover && coverBytes == null) " (no cover found)" else ""
-                        saved.note?.let { extra += " ($it)" }
-                        update(a.path, Status.Done, "${written.track}. ${written.title}$extra", saved.id)
+                        val extra = if (fetchCover && coverBytes == null) " (no cover found)" else ""
+                        update(a.path, Status.Done, "${written.track}. ${written.title}$extra", saved.id, saved.note.orEmpty())
                         onWritten(path, saved.id, written)
                     } catch (e: CancellationException) {
                         update(a.path, Status.Pending, "")
