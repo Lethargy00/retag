@@ -181,7 +181,7 @@ class BatchController(
             val bytes = Sources.findCover(best, tags)
             if (bytes != null) cover = CoverChange.Set(bytes) else notes += "no cover found"
         }
-        val saved = Organizer.save(path, tags, cover)
+        val saved = Organizer.save(path, tags, cover, replaceAll = overwrite)
         saved.note?.let { notes += it }
         val msg = "${tags.artist} – ${tags.title}" + (if (notes.isEmpty()) "" else " (${notes.joinToString(", ")})")
         return Result(Status.Done, msg, tags, saved.id)
@@ -305,7 +305,7 @@ class BatchController(
                             } else {
                                 CoverChange.Keep
                             }
-                            tags to Organizer.save(path, tags, cover)
+                            tags to Organizer.save(path, tags, cover, replaceAll = overwrite)
                         }
                         val extra = if (fetchCover && coverBytes == null) " (no cover found)" else ""
                         update(a.path, Status.Done, "${written.track}. ${written.title}$extra", saved.id, saved.note.orEmpty())

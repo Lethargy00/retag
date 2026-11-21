@@ -294,7 +294,7 @@ object OpusTags {
         0
     }
 
-    fun write(f: File, t: TagData, cover: CoverChange) {
+    fun write(f: File, t: TagData, cover: CoverChange, replaceAll: Boolean = false) {
         val out = File(f.path + ".new")
         RandomAccessFile(f, "r").use { raf ->
             val h = readHeaders(raf)
@@ -302,8 +302,11 @@ object OpusTags {
             val items = ArrayList<Pair<String, String>>()
             for (it in old.items) {
                 val k = it.first.uppercase()
-                if (k in MANAGED) continue
-                if (k == PICTURE && cover !is CoverChange.Keep) continue
+                if (k == PICTURE) {
+                    if (cover !is CoverChange.Keep) continue
+                } else if (replaceAll || k in MANAGED) {
+                    continue
+                }
                 items.add(it)
             }
             fun add(k: String, v: String) {

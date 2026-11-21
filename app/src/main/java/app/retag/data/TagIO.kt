@@ -3,6 +3,8 @@ package app.retag.data
 import android.graphics.BitmapFactory
 import android.util.Base64
 import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.audio.mp3.MP3File
+import org.jaudiotagger.tag.id3.ID3v1Tag
 import org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
@@ -42,10 +44,11 @@ object TagIO {
         }
     }
 
-    fun write(id: String, t: TagData, cover: CoverChange) {
+    /** With [replaceAll], every existing field in the file is removed first (the cover too, unless [cover] is Keep). */
+    fun write(id: String, t: TagData, cover: CoverChange, replaceAll: Boolean = false) {
         val tmp = Store.copyToTemp(id)
         try {
-            writeFile(tmp, t, cover)
+            writeFile(tmp, t, cover, replaceAll)
             Store.writeBack(id, tmp)
         } finally {
             tmp.delete()
@@ -91,14 +94,19 @@ object TagIO {
         return FileTags(data, cover, duration)
     }
 
-    private fun writeFile(file: File, t: TagData, cover: CoverChange) {
+    private fun writeFile(file: File, t: TagData, cover: CoverChange, replaceAll: Boolean) {
         if (OpusTags.isOpus(file)) {
-            OpusTags.write(file, t, cover)
+            OpusTags.write(file, t, cover, replaceAll)
             return
         }
         init()
         val af = AudioFileIO.read(file)
         val tag: Tag = af.tagOrCreateAndSetDefault
+        if (replaceAll) {
+            clearAll(tag, keepCover = cover is CoverChange.Keep)
+            // Old ID3v1 tags at the end of MP3s hold their own title/comment; drop them too.
+            if (af is MP3File && af.hasID3v1Tag()) af.setID3v1Tag(null as ID3v1Tag?)
+        }
 
         setText(tag, FieldKey.TITLE, t.title)
         setText(tag, FieldKey.ARTIST, t.artist)
@@ -141,6 +149,32 @@ object TagIO {
         } catch (e: org.jaudiotagger.tag.FieldDataInvalidException) {
             throw IllegalArgumentException("Invalid value for ${key.name.lowercase()}: $v")
         }
+    }
+
+    private val PICTURE_IDS = setOf("APIC", "PIC", "COVER_ART", "COVERART", "COVR", "WM/PICTURE", "METADATA_BLOCK_PICTURE")
+
+    /** Removes every field in the tag, including ones the app doesn't show. */
+    private fun clearAll(tag: Tag, keepCover: Boolean) {
+        val ids = LinkedHashSet<String>()
+        try {
+            val it = tag.fields
+            while (it.hasNext()) {
+                val f = it.next()
+                val id = f.id ?: continue
+                if (keepCover && (f.isBinary || id.uppercase() in PICTURE_IDS)) continue
+                ids.add(id)
+            }
+        } catch (e: Exception) {
+            // fall through with what we have
+        }
+        for (id in ids) {
+            try {
+                tag.deleteField(id)
+            } catch (e: Exception) {
+                // some formats refuse to delete certain fields; skip them
+            }
+        }
+        if (!keepCover) deleteArtwork(tag)
     }
 
     private fun deleteArtwork(tag: Tag) {

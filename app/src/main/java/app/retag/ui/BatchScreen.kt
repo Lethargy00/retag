@@ -109,15 +109,17 @@ private fun Options(b: BatchController) {
     val enabled = !b.running
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            SwitchRow("Replace existing tags", b.overwrite, enabled) { b.overwrite = it }
+            SwitchRow("Replace all existing tags", b.overwrite, enabled) { b.overwrite = it }
             SwitchRow("Add cover art", b.fetchCover, enabled) { b.fetchCover = it }
-            if (!b.overwrite) {
-                Text(
-                    "Only empty fields will be filled in.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                if (b.overwrite) {
+                    "Old tag data is wiped first (comments, lyrics and any other fields), so files only keep what the match has. The old cover stays only if no new one is found."
+                } else {
+                    "Only empty fields are filled in; everything already in the files is kept."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -448,6 +450,8 @@ private fun changes(before: TagData, after: TagData): List<Triple<String, String
         Triple("Track", num(before.track, before.trackTotal), num(after.track, after.trackTotal)),
         Triple("Disc", num(before.disc, before.discTotal), num(after.disc, after.discTotal)),
         Triple("Genre", before.genre, after.genre),
+        Triple("Comment", before.comment, after.comment),
+        Triple("Lyrics", if (before.lyrics.isBlank()) "" else "(lyrics)", if (after.lyrics.isBlank()) "" else "(lyrics)"),
     ).filter { it.second.trim() != it.third.trim() }
 }
 
@@ -516,6 +520,13 @@ private fun MatchRow(b: BatchController, a: Assignment, showAll: Boolean, onClic
                         )
                     }
                     if (cover != null) Text("Cover: $cover", style = MaterialTheme.typography.bodySmall)
+                    if (b.overwrite) {
+                        Text(
+                            "Any other old fields: removed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             } else {
                 Text("Tap to pick a track", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)

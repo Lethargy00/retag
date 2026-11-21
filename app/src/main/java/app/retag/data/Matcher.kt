@@ -100,8 +100,12 @@ object Matcher {
         return 0.6 * a + 0.4 * ar - countPenalty
     }
 
-    /** Fill in fields from [found]. With overwrite off, only empty fields are filled. */
+    /**
+     * With overwrite on, the result is exactly [found]: every old value (comment, lyrics, a year
+     * the match doesn't have…) is dropped. With overwrite off, only empty fields are filled in.
+     */
     fun merge(existing: TagData, found: TagData, overwrite: Boolean): TagData {
+        if (overwrite) return found.copy()
         fun pick(old: String, new: String) = when {
             new.isBlank() -> old
             overwrite || old.isBlank() -> new

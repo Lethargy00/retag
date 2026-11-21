@@ -89,6 +89,8 @@ fun EditorScreen(vm: AppViewModel, path: String) {
     var busy by remember { mutableStateOf<String?>(null) }
     var showMatches by remember { mutableStateOf(false) }
     var showCovers by remember { mutableStateOf(false) }
+    // After applying an online match, saving wipes all old tag data in the file first.
+    var replaceAll by remember { mutableStateOf(false) }
 
     LaunchedEffect(path) {
         try {
@@ -128,8 +130,9 @@ fun EditorScreen(vm: AppViewModel, path: String) {
             try {
                 val toWrite = tags
                 val oldId = id
-                val saved = withContext(Dispatchers.IO) { Organizer.save(oldId, toWrite, coverChange) }
+                val saved = withContext(Dispatchers.IO) { Organizer.save(oldId, toWrite, coverChange, replaceAll) }
                 coverChange = CoverChange.Keep
+                replaceAll = false
                 id = saved.id
                 vm.onSongWritten(oldId, saved.id, toWrite)
                 snack.showSnackbar(
@@ -158,11 +161,12 @@ fun EditorScreen(vm: AppViewModel, path: String) {
                     t = t.copy(genre = g)
                 }
                 tags = t
+                replaceAll = true
                 busy = "Downloading cover…"
                 val bytes = withContext(Dispatchers.IO) { Sources.findCover(c, t) }
                 if (bytes != null) setCover(bytes)
                 snack.showSnackbar(
-                    if (bytes != null) "Match applied. Review it, then tap Save." else "Match applied (no cover found). Tap Save to keep it."
+                    (if (bytes != null) "Match applied." else "Match applied (no cover found).") + " Saving replaces all old tag data."
                 )
             } catch (e: Exception) {
                 snack.showSnackbar("Something went wrong: ${e.message}")

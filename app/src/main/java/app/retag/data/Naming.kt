@@ -111,8 +111,8 @@ object Naming {
 object Organizer {
     class Saved(val id: String, val note: String?)
 
-    fun save(id: String, tags: TagData, cover: CoverChange): Saved {
-        TagIO.write(id, tags, cover)
+    fun save(id: String, tags: TagData, cover: CoverChange, replaceAll: Boolean = false): Saved {
+        TagIO.write(id, tags, cover, replaceAll)
         if (!Prefs.renameOn && !Prefs.organizeOn) return Saved(id, null)
         return try {
             Saved(organize(id, tags, Prefs.renameOn, Prefs.organizeOn), null)
