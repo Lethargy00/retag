@@ -60,7 +60,20 @@ import androidx.activity.compose.BackHandler
 import app.retag.AppViewModel
 import app.retag.Screen
 import app.retag.data.Song
-import java.io.File
+import app.retag.data.Library
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import app.retag.data.Naming
+import app.retag.data.Prefs
+import app.retag.data.SortBy
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -72,11 +85,18 @@ fun LibraryScreen(vm: AppViewModel) {
     val selection = vm.selection
     val songs = vm.songs
 
-    val filtered = remember(songs, query, onlyMissing) {
-        songs.filter { s ->
-            (!onlyMissing || s.missingTags) &&
-                (query.isBlank() || listOf(s.title, s.artist, s.album, s.fileName).any { it.contains(query, ignoreCase = true) })
-        }
+    val sort = Prefs.sort
+    var sortMenu by remember { mutableStateOf(false) }
+    var selectMenu by remember { mutableStateOf(false) }
+    var confirmOrganize by remember { mutableStateOf<List<String>?>(null) }
+    val filtered = remember(songs, query, onlyMissing, sort) {
+        Library.sort(
+            songs.filter { s ->
+                (!onlyMissing || s.missingTags) &&
+                    (query.isBlank() || listOf(s.title, s.artist, s.album, s.fileName).any { it.contains(query, ignoreCase = true) })
+            },
+            sort,
+        )
     }
     val folders = remember(filtered) {
         filtered.groupBy { it.folder }.toList().sortedBy { it.first.lowercase() }
@@ -95,7 +115,10 @@ fun LibraryScreen(vm: AppViewModel) {
                     title = { Text("Retag") },
                     actions = {
                         IconButton(onClick = { vm.loadLibrary() }, enabled = !vm.loading) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Rescan storage")
+                            Icon(Icons.Default.Refresh, contentDescription = "Rescan folder")
+                        }
+                        IconButton(onClick = { vm.open(Screen.Settings) }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }
                     },
                 )
@@ -110,6 +133,20 @@ fun LibraryScreen(vm: AppViewModel) {
                             selection.clear()
                             selection.addAll(filtered.map { it.path })
                         }) { Text("Select all") }
+                        Box {
+                            IconButton(onClick = { selectMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                            }
+                            DropdownMenu(expanded = selectMenu, onDismissRequest = { selectMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Rename & organize") },
+                                    onClick = {
+                                        selectMenu = false
+                                        confirmOrganize = selection.toList()
+                                    },
+                                )
+                            }
+                        }
                     },
                 )
             }
@@ -157,6 +194,19 @@ fun LibraryScreen(vm: AppViewModel) {
                 .padding(pad)
                 .fillMaxSize()
         ) {
+            vm.organize?.let { o ->
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !o.running) { vm.dismissOrganize() },
+                ) {
+                    Text(
+                        if (o.running) "Renaming & organizing: ${o.done} of ${o.total}…" else (o.result.orEmpty() + "\nTap to dismiss."),
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
+            }
             val b = vm.batch
             if (b != null && b.running) {
                 Surface(
@@ -188,15 +238,36 @@ fun LibraryScreen(vm: AppViewModel) {
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
             Row(
-                Modifier.padding(horizontal = 12.dp),
+                Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FilterChip(
                     selected = onlyMissing,
                     onClick = { onlyMissing = !onlyMissing },
-                    label = { Text("Missing artist/album") },
+                    label = { Text("Missing tags") },
                 )
+                Box {
+                    AssistChip(
+                        onClick = { sortMenu = true },
+                        label = { Text(sort.label, maxLines = 1) },
+                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+                    )
+                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                        for (option in SortBy.entries) {
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                leadingIcon = { if (option == sort) Icon(Icons.Default.Check, contentDescription = null) },
+                                onClick = {
+                                    Prefs.sort = option
+                                    sortMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
                 Text(
                     "${filtered.size} songs",
                     style = MaterialTheme.typography.bodySmall,
@@ -212,13 +283,16 @@ fun LibraryScreen(vm: AppViewModel) {
                 vm.loading && songs.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         CircularProgressIndicator()
-                        Text("Looking for music on your phone…")
+                        Text("Looking for music in ${vm.folderName}…")
                     }
                 }
                 vm.scannedOnce && songs.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text("No music files found. Supported: MP3, M4A, FLAC, OGG, WMA, WAV, AIFF, DSF.")
                 }
                 tab == 0 -> LazyColumn(Modifier.fillMaxSize()) {
+                    vm.loadingDetail?.let { d ->
+                        item { Text(d, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+                    }
                     if (selection.isEmpty() && filtered.isNotEmpty()) {
                         item {
                             Text(
@@ -249,11 +323,11 @@ fun LibraryScreen(vm: AppViewModel) {
                                 modifier = Modifier.clickable {
                                     if (open) expanded.remove(folder) else expanded.add(folder)
                                 },
-                                headlineContent = { Text(File(folder).name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                headlineContent = { Text(folder.substringAfterLast('/').ifBlank { vm.folderName }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 supportingContent = {
                                     val missing = list.count { it.missingTags }
                                     Text(
-                                        "${list.size} songs" + (if (missing > 0) " · $missing missing tags" else "") + " · $folder",
+                                        "${list.size} songs" + (if (missing > 0) " · $missing missing tags" else "") + " · " + (if (folder.isEmpty()) vm.folderName else "${vm.folderName}/$folder"),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -290,6 +364,18 @@ fun LibraryScreen(vm: AppViewModel) {
                 }
             }
         }
+    }
+
+    confirmOrganize?.let { ids ->
+        OrganizeDialog(
+            count = ids.size,
+            onConfirm = { rename, folders ->
+                confirmOrganize = null
+                selection.clear()
+                vm.organizeFiles(ids, rename, folders)
+            },
+            onDismiss = { confirmOrganize = null },
+        )
     }
 }
 
@@ -345,5 +431,36 @@ private fun SongRow(
         } else {
             ListItemDefaults.colors()
         },
+    )
+}
+
+@Composable
+private fun OrganizeDialog(count: Int, onConfirm: (rename: Boolean, folders: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var rename by remember { mutableStateOf(true) }
+    var folders by remember { mutableStateOf(true) }
+    val example = buildString {
+        if (folders) Naming.folders(Naming.SAMPLE).forEach { append(it).append("/") }
+        append(if (rename) Naming.fileBase(Naming.SAMPLE) ?: "Song" else "current name")
+        append(".mp3")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename & organize $count files") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Uses each file's current tags and the patterns in Settings.")
+                SwitchRow("Rename files", rename, true) { rename = it }
+                SwitchRow("Move into artist/album folders", folders, true) { folders = it }
+                Text(
+                    "Example: $example",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(rename, folders) }, enabled = rename || folders) { Text("Go") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

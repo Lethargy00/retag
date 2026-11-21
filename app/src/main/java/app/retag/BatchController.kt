@@ -10,6 +10,8 @@ import app.retag.data.Assignment
 import app.retag.data.CoverChange
 import app.retag.data.FileInfo
 import app.retag.data.Matcher
+import app.retag.data.Organizer
+import app.retag.data.Store
 import app.retag.data.Sources
 import app.retag.data.TagData
 import app.retag.data.TagIO
@@ -26,9 +28,14 @@ import kotlin.math.roundToInt
 
 enum class Status { Pending, Working, Done, Skipped, Failed }
 
-data class BatchItem(val path: String, val status: Status = Status.Pending, val message: String = "") {
-    val fileName: String get() = File(path).name
-}
+/** [key] is the file's ID when the batch started; [path] is its current ID (it changes if the file gets renamed/moved). */
+data class BatchItem(
+    val key: String,
+    val path: String = key,
+    val fileName: String = Store.name(key),
+    val status: Status = Status.Pending,
+    val message: String = "",
+)
 
 /**
  * Runs auto-tagging over many files, either song by song or as one album.
@@ -39,7 +46,7 @@ class BatchController(
     val paths: List<String>,
     val albumMode: Boolean,
     private val scope: CoroutineScope,
-    private val onWritten: (String, TagData) -> Unit,
+    private val onWritten: (oldId: String, newId: String, tags: TagData) -> Unit,
 ) {
     val items = mutableStateListOf<BatchItem>().apply { addAll(paths.map { BatchItem(it) }) }
     var running by mutableStateOf(false)
@@ -73,9 +80,12 @@ class BatchController(
         if (albumMode) prefillAlbumQuery()
     }
 
-    private fun update(path: String, status: Status, message: String) {
-        val i = items.indexOfFirst { it.path == path }
-        if (i >= 0) items[i] = items[i].copy(status = status, message = message)
+    private fun update(key: String, status: Status, message: String, newPath: String? = null) {
+        val i = items.indexOfFirst { it.key == key }
+        if (i >= 0) {
+            val p = newPath ?: items[i].path
+            items[i] = items[i].copy(status = status, message = message, path = p, fileName = Store.name(p))
+        }
     }
 
     fun cancel() {
@@ -99,20 +109,21 @@ class BatchController(
         finished = false
         job = scope.launch {
             try {
-                for (path in paths) {
+                for (key in paths) {
                     if (!isActive) break
-                    val item = items.firstOrNull { it.path == path } ?: continue
+                    val item = items.firstOrNull { it.key == key } ?: continue
                     if (item.status != Status.Pending) continue
-                    update(path, Status.Working, "Searching…")
+                    val path = item.path
+                    update(key, Status.Working, "Searching…")
                     try {
                         val result = withContext(Dispatchers.IO) { processOne(path) }
-                        update(path, result.status, result.message)
-                        result.written?.let { onWritten(path, it) }
+                        update(key, result.status, result.message, result.newId)
+                        result.written?.let { onWritten(path, result.newId ?: path, it) }
                     } catch (e: CancellationException) {
-                        update(path, Status.Pending, "")
+                        update(key, Status.Pending, "")
                         throw e
                     } catch (e: Exception) {
-                        update(path, Status.Failed, describe(e))
+                        update(key, Status.Failed, describe(e))
                     }
                 }
             } finally {
@@ -122,7 +133,7 @@ class BatchController(
         }
     }
 
-    private class Result(val status: Status, val message: String, val written: TagData? = null)
+    private class Result(val status: Status, val message: String, val written: TagData? = null, val newId: String? = null)
 
     private fun processOne(path: String): Result {
         val ft = TagIO.read(path)
@@ -146,9 +157,10 @@ class BatchController(
             val bytes = Sources.findCover(best, tags)
             if (bytes != null) cover = CoverChange.Set(bytes) else notes += "no cover found"
         }
-        TagIO.write(path, tags, cover)
+        val saved = Organizer.save(path, tags, cover)
+        saved.note?.let { notes += it }
         val msg = "${tags.artist} – ${tags.title}" + (if (notes.isEmpty()) "" else " (${notes.joinToString(", ")})")
-        return Result(Status.Done, msg, tags)
+        return Result(Status.Done, msg, tags, saved.id)
     }
 
     // ---------------- Album mode ----------------
@@ -162,7 +174,7 @@ class BatchController(
                     .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key.orEmpty()
                 val artistTag = files.map { it.tags.albumArtist.ifBlank { it.tags.artist } }.filter { it.isNotBlank() }
                     .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key.orEmpty()
-                val folderName = File(paths.first()).parentFile?.name.orEmpty()
+                val folderName = Store.parentName(paths.first())
                 val (folderArtist, folderAlbum) = Matcher.parseFileName(folderName)
                 albumQuery = albumTag.ifBlank { folderAlbum }
                 artistQuery = artistTag.ifBlank { folderArtist }
@@ -258,22 +270,23 @@ class BatchController(
                         update(a.path, Status.Skipped, "Not matched to a track on this album")
                         continue
                     }
+                    val path = items.firstOrNull { it.key == a.path }?.path ?: a.path
                     update(a.path, Status.Working, "Writing…")
                     try {
-                        val written = withContext(Dispatchers.IO) {
-                            val ft = TagIO.read(a.path)
+                        val (written, saved) = withContext(Dispatchers.IO) {
+                            val ft = TagIO.read(path)
                             val tags = Matcher.merge(ft.tags, track.tags, overwrite)
                             val cover = if (coverBytes != null && (overwrite || ft.cover == null)) {
                                 CoverChange.Set(coverBytes)
                             } else {
                                 CoverChange.Keep
                             }
-                            TagIO.write(a.path, tags, cover)
-                            tags
+                            tags to Organizer.save(path, tags, cover)
                         }
-                        val extra = if (fetchCover && coverBytes == null) " (no cover found)" else ""
-                        update(a.path, Status.Done, "${written.track}. ${written.title}$extra")
-                        onWritten(a.path, written)
+                        var extra = if (fetchCover && coverBytes == null) " (no cover found)" else ""
+                        saved.note?.let { extra += " ($it)" }
+                        update(a.path, Status.Done, "${written.track}. ${written.title}$extra", saved.id)
+                        onWritten(path, saved.id, written)
                     } catch (e: CancellationException) {
                         update(a.path, Status.Pending, "")
                         throw e

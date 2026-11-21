@@ -8,6 +8,9 @@ An open-source alternative to AutomaTag. It finds the right tags and cover art f
 - **Cover art.** Pick from Cover Art Archive and iTunes results, up to 1200×1200 px, or choose an image from your gallery.
 - **Batch auto-tag.** Select many songs (long-press) and tap **Auto-tag**. Confident matches are saved one by one, and uncertain ones are skipped so you can fix them by hand.
 - **Tag a whole album.** In the **Folders** tab tap **Tag album**, or select songs and tap **As album**. Choose the release, check how files were matched to tracks, then write them all in one go.
+- **Rename files** with a pattern such as `%title%[ - %year%]` (Mp3tag style, `[...]` is left out when a field inside is empty). Fields: `%title% %artist% %albumartist% %album% %year% %track% %disc% %genre%`.
+- **Sort into folders** inside your music folder, e.g. `%albumartist%/%album%` gives `Music/Queen/A Night at the Opera/`. Both happen automatically when tags are saved (turn on in Settings), or on demand: select songs, then ⋮ → **Rename & organize**.
+- **Sort the list** by date added, title, artist, album or file name.
 - **Edit many files at once.** Set album, artist, genre, year and cover on a whole selection, with optional automatic track numbering.
 - **Formats:** MP3, M4A/M4B, FLAC, OGG Vorbis, WMA, WAV, AIFF, DSF. Works on internal storage and SD cards.
 
@@ -21,9 +24,9 @@ GitHub builds the app for you for free:
    - **In the browser:** on the new repo page click **uploading an existing file** and drag in *everything inside* this folder. On a Mac, press **Cmd+Shift+.** in Finder to show the hidden `.github` folder, which must be included.
 3. Open the **Actions** tab. A **Build APK** run starts automatically and takes about 5 minutes.
 4. When it's green, open the repo's **Releases** (right-hand side of the main page). Download **Retag.apk** on your phone and open it. Android asks you to allow installing from your browser the first time.
-5. Open Retag and grant **"Allow access to manage all files"**. The app needs this to rewrite tags inside your music files.
+5. Open Retag and choose your music folder (for example **Music**). The app only sees and changes files inside that folder. Android doesn't allow picking the whole storage or the Download folder.
 
-Every later push builds a new release. Updates install over the old version because each build is signed with the same key (`app/retag.keystore`). That key sits in this repo, so keep the repo private if you don't want others able to sign "updates" for your copy.
+Every later push to `main` builds a new release (other branches only build). Updates install over the old version because each build is signed with the same key (`app/retag.keystore`). That key sits in this repo, so keep the repo private if you don't want others able to sign "updates" for your copy.
 
 ## Building on a computer instead
 
@@ -32,6 +35,8 @@ Open the folder in Android Studio and press Run. From a terminal: `./gradlew ass
 ## Notes
 
 - The data sources are free community/public APIs: MusicBrainz (about 1 request per second) and iTunes Search (about 20 per minute). Batch tagging therefore takes a few seconds per song.
+- "Date added" is when Retag first saw a file (taken from the file's modified date at that point), so renaming or retagging doesn't change it.
+- Tags are written to a temporary copy and then copied back into the file, because Android's folder access doesn't give apps a normal file path.
 - After saving, the app asks Android to rescan the file so other music players see the new tags. Some players cache tags and need their own rescan.
 - Batch mode never guesses: a match below about 75% confidence (90% when the file has no artist) is skipped rather than written.
 - Tag writing uses [jaudiotagger](https://bitbucket.org/ijabz/jaudiotagger) (LGPL).

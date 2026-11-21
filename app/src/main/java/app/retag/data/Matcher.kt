@@ -60,7 +60,7 @@ object Matcher {
     }
 
     fun queryFor(path: String, tags: TagData, durationSec: Int): Query {
-        val (fileArtist, fileTitle) = parseFileName(File(path).nameWithoutExtension)
+        val (fileArtist, fileTitle) = parseFileName(Store.baseName(path))
         return Query(
             title = tags.title.ifBlank { fileTitle },
             artist = tags.artist.ifBlank { tags.albumArtist }.ifBlank { fileArtist },
@@ -123,14 +123,14 @@ object Matcher {
 
     private fun fileTrackNumber(f: FileInfo): Int? {
         TagIO.numberOf(f.tags.track).toIntOrNull()?.let { return it }
-        val name = File(f.path).nameWithoutExtension
+        val name = Store.baseName(f.path)
         val m = Regex("^(?:\\d-)?(\\d{1,3})(?!\\d)|^track\\s*(\\d{1,3})", RegexOption.IGNORE_CASE).find(name) ?: return null
         return m.groupValues[1].ifEmpty { m.groupValues[2] }.toIntOrNull()
     }
 
     /** Pairs each file with the most likely track on the chosen album. */
     fun assign(files: List<FileInfo>, tracks: List<TrackInfo>): List<Assignment> {
-        val titles = files.map { f -> f.tags.title.ifBlank { parseFileName(File(f.path).nameWithoutExtension).second } }
+        val titles = files.map { f -> f.tags.title.ifBlank { parseFileName(Store.baseName(f.path)).second } }
         val numbers = files.map { fileTrackNumber(it) }
         val discs = files.map { TagIO.numberOf(it.tags.disc).toIntOrNull() }
 
