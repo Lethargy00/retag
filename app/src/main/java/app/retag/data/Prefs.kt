@@ -18,7 +18,7 @@ enum class SortBy(val label: String) {
 
 /** App settings. Backed by SharedPreferences and observable from Compose. */
 object Prefs {
-    const val DEFAULT_RENAME = "%title%[ - %year%]"
+    const val DEFAULT_RENAME = "%title%"
     const val DEFAULT_FOLDERS = "%albumartist%/%album%"
 
     private lateinit var sp: SharedPreferences

@@ -53,6 +53,7 @@ object TagIO {
     }
 
     private fun readFile(file: File): FileTags {
+        if (OpusTags.isOpus(file)) return OpusTags.read(file)
         init()
         val af = AudioFileIO.read(file)
         val duration = try {
@@ -91,6 +92,10 @@ object TagIO {
     }
 
     private fun writeFile(file: File, t: TagData, cover: CoverChange) {
+        if (OpusTags.isOpus(file)) {
+            OpusTags.write(file, t, cover)
+            return
+        }
         init()
         val af = AudioFileIO.read(file)
         val tag: Tag = af.tagOrCreateAndSetDefault

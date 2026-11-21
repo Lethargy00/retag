@@ -61,6 +61,12 @@ import app.retag.AppViewModel
 import app.retag.Screen
 import app.retag.data.Song
 import app.retag.data.Library
+import app.retag.data.Thumbs
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import app.retag.data.Naming
@@ -287,7 +293,7 @@ fun LibraryScreen(vm: AppViewModel) {
                     }
                 }
                 vm.scannedOnce && songs.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("No music files found. Supported: MP3, M4A, FLAC, OGG, WMA, WAV, AIFF, DSF.")
+                    Text("No music files found. Supported: MP3, M4A, FLAC, OGG, OPUS, WMA, WAV, AIFF, DSF.")
                 }
                 tab == 0 -> LazyColumn(Modifier.fillMaxSize()) {
                     vm.loadingDetail?.let { d ->
@@ -408,8 +414,22 @@ private fun SongRow(
             )
         },
         leadingContent = {
+            val version = Thumbs.versions[song.path] ?: 0
+            val thumb by produceState<ImageBitmap?>(null, song.path, version) {
+                value = Thumbs.load(song.path)?.asImageBitmap()
+            }
+            val art = thumb
             if (selecting) {
                 Checkbox(checked = selected, onCheckedChange = null)
+            } else if (art != null) {
+                Image(
+                    bitmap = art,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
             } else {
                 Box(
                     Modifier

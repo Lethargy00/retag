@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
  * cached, together with the date each file was first seen ("date added").
  */
 object Library {
-    val EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "ogg", "wma", "wav", "aif", "aiff", "dsf")
+    val EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "ogg", "opus", "wma", "wav", "aif", "aiff", "dsf")
 
     private class Meta(
         val title: String,

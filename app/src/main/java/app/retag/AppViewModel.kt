@@ -14,6 +14,7 @@ import app.retag.data.Song
 import app.retag.data.Store
 import app.retag.data.TagData
 import app.retag.data.TagIO
+import app.retag.data.Thumbs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -89,7 +90,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val generation = ++loadGeneration
         loadJob = viewModelScope.launch {
             try {
-                val listing = withContext(Dispatchers.IO) { Library.list() }
+                val listing = withContext(Dispatchers.IO) {
+                    Library.list().also { l -> Thumbs.invalidate(*l.stale.map { it.id }.toTypedArray()) }
+                }
                 songs = listing.songs
                 scannedOnce = true
                 // Fill in tags for new or changed files, a chunk at a time so the list updates.
@@ -127,6 +130,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Call on the main thread after a file has been rewritten (and maybe renamed or moved to [newId]). */
     fun onSongWritten(oldId: String, newId: String, tags: TagData) {
         Library.updated(oldId, newId, tags)
+        Thumbs.invalidate(oldId, newId)
         val name = Store.name(newId)
         val updated = Song(
             path = newId,

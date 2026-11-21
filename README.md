@@ -8,11 +8,12 @@ An open-source alternative to AutomaTag. It finds the right tags and cover art f
 - **Cover art.** Pick from Cover Art Archive and iTunes results, up to 1200×1200 px, or choose an image from your gallery.
 - **Batch auto-tag.** Select many songs (long-press) and tap **Auto-tag**. Confident matches are saved one by one, and uncertain ones are skipped so you can fix them by hand.
 - **Tag a whole album.** In the **Folders** tab tap **Tag album**, or select songs and tap **As album**. Choose the release, check how files were matched to tracks, then write them all in one go.
-- **Rename files** with a pattern such as `%title%[ - %year%]` (Mp3tag style, `[...]` is left out when a field inside is empty). Fields: `%title% %artist% %albumartist% %album% %year% %track% %disc% %genre%`.
+- **Rename files** with a pattern, by default just `%title%`. Patterns work like Mp3tag: `%title%[ - %year%]` gives `Song - 1999`, and the `[...]` part is left out when a field inside is empty. Fields: `%title% %artist% %albumartist% %album% %year% %track% %disc% %genre%`.
 - **Sort into folders** inside your music folder, e.g. `%albumartist%/%album%` gives `Music/Queen/A Night at the Opera/`. Both happen automatically when tags are saved (turn on in Settings), or on demand: select songs, then ⋮ → **Rename & organize**.
 - **Sort the list** by date added, title, artist, album or file name.
 - **Edit many files at once.** Set album, artist, genre, year and cover on a whole selection, with optional automatic track numbering.
-- **Formats:** MP3, M4A/M4B, FLAC, OGG Vorbis, WMA, WAV, AIFF, DSF. Works on internal storage and SD cards.
+- **Cover thumbnails** in the song list.
+- **Formats:** MP3, M4A/M4B, FLAC, OGG Vorbis, Opus, WMA, WAV, AIFF, DSF. Works on internal storage and SD cards.
 
 ## Getting the APK (no coding needed)
 
@@ -39,4 +40,5 @@ Open the folder in Android Studio and press Run. From a terminal: `./gradlew ass
 - Tags are written to a temporary copy and then copied back into the file, because Android's folder access doesn't give apps a normal file path.
 - After saving, the app asks Android to rescan the file so other music players see the new tags. Some players cache tags and need their own rescan.
 - Batch mode never guesses: a match below about 75% confidence (90% when the file has no artist) is skipped rather than written.
+- Opus tags are read and written by Retag's own code (`OpusTags.kt`), since jaudiotagger doesn't support Opus.
 - Tag writing uses [jaudiotagger](https://bitbucket.org/ijabz/jaudiotagger) (LGPL).
