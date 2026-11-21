@@ -71,7 +71,29 @@ class BatchController(
     var assignments by mutableStateOf<List<Assignment>>(emptyList())
         private set
 
-    private var files: List<FileInfo> = emptyList()
+    /** Each file's tags as they were read before writing, keyed by its original ID. */
+    var files by mutableStateOf<List<FileInfo>>(emptyList())
+        private set
+
+    fun fileInfo(key: String): FileInfo? = files.firstOrNull { it.path == key }
+
+    /** What a file's tags will look like after writing its assigned track. */
+    fun preview(a: Assignment): TagData? {
+        val t = a.track ?: return null
+        val before = fileInfo(a.path)?.tags ?: return t.tags
+        return Matcher.merge(before, t.tags, overwrite)
+    }
+
+    /** "set", "replaced" or null (unchanged) for the album cover. */
+    fun coverEffect(a: Assignment): String? {
+        if (a.track == null || !fetchCover || album?.coverFull.isNullOrEmpty()) return null
+        val has = fileInfo(a.path)?.hasCover == true
+        return when {
+            !has -> "added"
+            overwrite -> "replaced"
+            else -> null
+        }
+    }
     private var job: Job? = null
 
     val doneCount: Int get() = items.count { it.status != Status.Pending && it.status != Status.Working }
@@ -241,9 +263,9 @@ class BatchController(
     fun reassign(path: String, track: TrackInfo?) {
         assignments = assignments.map {
             when {
-                it.path == path -> it.copy(track = track, confidence = if (track == null) 0.0 else 1.0)
+                it.path == path -> it.copy(track = track, confidence = if (track == null) 0.0 else 1.0, manual = true)
                 // A track can only belong to one file.
-                track != null && it.track == track -> it.copy(track = null, confidence = 0.0)
+                track != null && it.track == track -> it.copy(track = null, confidence = 0.0, manual = false)
                 else -> it
             }
         }

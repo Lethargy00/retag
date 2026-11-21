@@ -53,6 +53,9 @@ import app.retag.Screen
 import app.retag.Status
 import app.retag.data.Assignment
 import app.retag.data.Store
+import app.retag.data.TagData
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,7 +77,7 @@ fun BatchScreen(vm: AppViewModel) {
                     Text(
                         when {
                             b == null -> "Auto-tag"
-                            b.albumMode -> "Tag as album (${b.paths.size} files)"
+                            b.albumMode -> "Find album (${b.paths.size} songs)"
                             else -> "Auto-tag ${b.paths.size} songs"
                         }
                     )
@@ -215,6 +218,7 @@ private fun PerSongMode(vm: AppViewModel, b: BatchController) {
 private fun AlbumMode(vm: AppViewModel, b: BatchController) {
     val al = b.album
     var pickingFor by remember { mutableStateOf<Assignment?>(null) }
+    var showAll by remember { mutableStateOf(false) }
 
     LazyColumn(Modifier.fillMaxSize()) {
         if (al == null) {
@@ -270,6 +274,11 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                 HorizontalDivider()
             }
         } else {
+            val need = b.assignments.filter { it.track == null }
+            val unsure = b.assignments.filter { it.track != null && !it.manual && it.confidence < UNSURE }
+            val byYou = b.assignments.filter { it.track != null && it.manual }
+            val sure = b.assignments.filter { it.track != null && !it.manual && it.confidence >= UNSURE }
+            val toWrite = b.assignments.size - need.size
             item {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -285,107 +294,238 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                         }
                         TextButton(onClick = { b.clearAlbum() }, enabled = !b.running) { Text("Change") }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CountPill("${sure.size + unsure.size} found", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f))
+                        CountPill("${byYou.size} set by you", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f))
+                        CountPill(
+                            "${need.size} need a track",
+                            if (need.isEmpty()) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer,
+                            Modifier.weight(1f),
+                        )
+                    }
                     Options(b)
-                    val matched = b.assignments.count { it.track != null }
-                    Text(
-                        "$matched of ${b.assignments.size} files matched to a track. Tap a file to change its track.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    SwitchRow("Show every field that changes", showAll, true) { showAll = it }
                     when {
                         b.running -> OutlinedButton(onClick = { b.cancel() }, modifier = Modifier.fillMaxWidth()) { Text("Stop") }
                         else -> Button(
                             onClick = { b.applyAlbum() },
-                            enabled = matched > 0,
+                            enabled = toWrite > 0,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text(if (b.finished) "Write tags again" else "Write tags to $matched files") }
+                        ) { Text(if (b.finished) "Write tags again" else "Write tags to $toWrite files") }
+                    }
+                    if (need.isNotEmpty() && !b.running) {
+                        Text(
+                            "Files without a track are left unchanged. Tap one to pick its track.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     BusyAndError(b)
                     if (b.running || b.items.any { it.status != Status.Pending }) Progress(b)
                 }
                 HorizontalDivider()
             }
-            items(b.assignments, key = { it.path }) { a ->
-                val item = b.items.firstOrNull { it.key == a.path }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !b.running) { pickingFor = a }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StatusIcon(item?.status ?: Status.Pending)
-                    Column(Modifier.weight(1f)) {
-                        Text(Store.name(a.path), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                        val t = a.track
-                        if (t != null) {
-                            val disc = if (t.tags.disc.isNotBlank()) "${t.tags.disc}-" else ""
-                            Text(
-                                "→ $disc${t.tags.track}. ${t.tags.title}",
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        } else {
-                            Text("→ not matched (won't be changed)", color = MaterialTheme.colorScheme.error)
-                        }
-                        if (item != null && item.message.isNotBlank() && item.status != Status.Done) {
-                            Text(item.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                    if (a.track != null) {
-                        Text(
-                            "${(a.confidence * 100).roundToInt()}%",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (a.confidence < 0.6) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(40.dp),
-                        )
-                    }
+            fun section(title: String, list: List<Assignment>, color: @Composable () -> androidx.compose.ui.graphics.Color) {
+                if (list.isEmpty()) return
+                item(key = "h:$title") {
+                    Text(
+                        "$title (${list.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = color(),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                    )
                 }
-                HorizontalDivider()
+                items(list, key = { it.path }) { a ->
+                    MatchRow(b, a, showAll) { pickingFor = a }
+                    HorizontalDivider()
+                }
             }
+            section("Need a track", need) { MaterialTheme.colorScheme.error }
+            section("Check these: unsure matches", unsure) { MaterialTheme.colorScheme.tertiary }
+            section("Set by you", byYou) { MaterialTheme.colorScheme.secondary }
+            section("Matched automatically", sure) { MaterialTheme.colorScheme.primary }
         }
     }
 
     val target = pickingFor
     if (target != null && al != null) {
+        val used = b.assignments.filter { it.track != null && it.path != target.path }.associateBy({ it.track }, { it.path })
+        val before = b.fileInfo(target.path)?.tags
         AlertDialog(
             onDismissRequest = { pickingFor = null },
-            title = { Text(Store.name(target.path), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    run {
+            title = {
+                Column {
+                    Text(Store.name(target.path), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                    if (before != null) {
                         Text(
-                            "Don't tag this file",
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    b.reassign(target.path, null)
-                                    pickingFor = null
-                                }
-                                .padding(vertical = 10.dp),
-                            color = MaterialTheme.colorScheme.error,
+                            "Now: " + describe(before),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Don't tag this file",
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                b.reassign(target.path, null)
+                                pickingFor = null
+                            }
+                            .padding(vertical = 10.dp),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                     al.tracks.forEach { t ->
-                        val disc = if (t.tags.disc.isNotBlank()) "${t.tags.disc}-" else ""
                         val dur = t.durationSec?.let { " (${it / 60}:${(it % 60).toString().padStart(2, '0')})" }.orEmpty()
-                        Text(
-                            "$disc${t.tags.track}. ${t.tags.title}$dur",
+                        val owner = used[t]
+                        Column(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     b.reassign(target.path, t)
                                     pickingFor = null
                                 }
-                                .padding(vertical = 10.dp),
-                            fontWeight = if (target.track == t) FontWeight.Bold else FontWeight.Normal,
-                        )
+                                .padding(vertical = 8.dp),
+                        ) {
+                            Text(
+                                trackLabel(t.tags) + dur,
+                                fontWeight = if (target.track == t) FontWeight.Bold else FontWeight.Normal,
+                                color = if (owner != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (owner != null) {
+                                Text(
+                                    "Now on ${Store.name(owner)}; picking it moves it here",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 }
             },
             confirmButton = { TextButton(onClick = { pickingFor = null }) { Text("Cancel") } },
         )
+    }
+}
+
+private const val UNSURE = 0.6
+
+private fun trackLabel(t: TagData): String {
+    fun n(s: String) = s.substringBefore('/').trim().toIntOrNull() ?: 0
+    // Only show the disc when the album has more than one.
+    val disc = if (n(t.disc) > 1 || n(t.discTotal) > 1) "${n(t.disc)}-" else ""
+    val num = t.track.ifBlank { "?" }
+    return "$disc$num. ${t.title}"
+}
+
+private fun describe(t: TagData): String =
+    listOf(t.title.ifBlank { "(no title)" }, t.artist, t.track.takeIf { it.isNotBlank() }?.let { "track $it" }.orEmpty())
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
+
+/** Fields that differ between [before] and [after], as (label, old, new). */
+private fun changes(before: TagData, after: TagData): List<Triple<String, String, String>> {
+    fun num(n: String, total: String) = if (total.isBlank()) n else "$n/$total"
+    return listOf(
+        Triple("Title", before.title, after.title),
+        Triple("Artist", before.artist, after.artist),
+        Triple("Album artist", before.albumArtist, after.albumArtist),
+        Triple("Album", before.album, after.album),
+        Triple("Year", before.year, after.year),
+        Triple("Track", num(before.track, before.trackTotal), num(after.track, after.trackTotal)),
+        Triple("Disc", num(before.disc, before.discTotal), num(after.disc, after.discTotal)),
+        Triple("Genre", before.genre, after.genre),
+    ).filter { it.second.trim() != it.third.trim() }
+}
+
+@Composable
+private fun CountPill(text: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
+    Surface(color = color, shape = RoundedCornerShape(8.dp), modifier = modifier) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun MatchRow(b: BatchController, a: Assignment, showAll: Boolean, onClick: () -> Unit) {
+    val item = b.items.firstOrNull { it.key == a.path }
+    val before = b.fileInfo(a.path)?.tags
+    val after = b.preview(a)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !b.running, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        StatusIcon(item?.status ?: Status.Pending)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                item?.fileName ?: Store.name(a.path),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "Before: " + (before?.let(::describe) ?: "…"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (a.track != null && after != null) {
+                Text(
+                    "After: " + trackLabel(after),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (showAll && before != null) {
+                    val diff = changes(before, after)
+                    val cover = b.coverEffect(a)
+                    if (diff.isEmpty() && cover == null) {
+                        Text("No changes", style = MaterialTheme.typography.bodySmall)
+                    }
+                    for ((label, old, new) in diff) {
+                        Text(
+                            "$label: ${old.ifBlank { "–" }} → ${new.ifBlank { "–" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (cover != null) Text("Cover: $cover", style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
+                Text("Tap to pick a track", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (item != null && item.message.isNotBlank() && item.status != Status.Done) {
+                Text(item.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+        when {
+            a.track == null -> Unit
+            a.manual -> Text("you", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.width(40.dp))
+            else -> Text(
+                "${(a.confidence * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (a.confidence < UNSURE) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(40.dp),
+            )
+        }
     }
 }
 

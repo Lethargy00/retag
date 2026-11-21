@@ -84,10 +84,8 @@ import androidx.compose.material3.DropdownMenuItem
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(vm: AppViewModel) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var onlyMissing by rememberSaveable { mutableStateOf(false) }
-    val expanded = remember { mutableStateListOf<String>() }
     val selection = vm.selection
     val songs = vm.songs
 
@@ -103,9 +101,6 @@ fun LibraryScreen(vm: AppViewModel) {
             },
             sort,
         )
-    }
-    val folders = remember(filtered) {
-        filtered.groupBy { it.folder }.toList().sortedBy { it.first.lowercase() }
     }
 
     BackHandler(enabled = selection.isNotEmpty()) { selection.clear() }
@@ -170,18 +165,18 @@ fun LibraryScreen(vm: AppViewModel) {
                             onClick = {
                                 val paths = selection.toList()
                                 selection.clear()
-                                vm.startBatch(paths, albumMode = false)
+                                vm.startBatch(paths, albumMode = true)
                             },
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Auto-tag") }
+                            modifier = Modifier.weight(1.3f),
+                        ) { Text("Find album", maxLines = 1) }
                         OutlinedButton(
                             onClick = {
                                 val paths = selection.toList()
                                 selection.clear()
-                                vm.startBatch(paths, albumMode = true)
+                                vm.startBatch(paths, albumMode = false)
                             },
                             modifier = Modifier.weight(1f),
-                        ) { Text("As album") }
+                        ) { Text("Auto-tag", maxLines = 1) }
                         OutlinedButton(
                             onClick = {
                                 val paths = selection.toList()
@@ -280,10 +275,6 @@ fun LibraryScreen(vm: AppViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Songs") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Folders") })
-            }
 
             when {
                 vm.loading && songs.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -295,14 +286,14 @@ fun LibraryScreen(vm: AppViewModel) {
                 vm.scannedOnce && songs.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text("No music files found. Supported: MP3, M4A, FLAC, OGG, OPUS, WMA, WAV, AIFF, DSF.")
                 }
-                tab == 0 -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(Modifier.fillMaxSize()) {
                     vm.loadingDetail?.let { d ->
                         item { Text(d, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
                     }
                     if (selection.isEmpty() && filtered.isNotEmpty()) {
                         item {
                             Text(
-                                "Tap a song to edit it. Long-press to select several for auto-tagging.",
+                                "Tap a song to edit it. Long-press to select several, then Find album to match them to an album.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -319,53 +310,6 @@ fun LibraryScreen(vm: AppViewModel) {
                             },
                             onLongClick = { toggle(s.path) },
                         )
-                    }
-                }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    for ((folder, list) in folders) {
-                        item(key = "folder:$folder") {
-                            val open = folder in expanded
-                            ListItem(
-                                modifier = Modifier.clickable {
-                                    if (open) expanded.remove(folder) else expanded.add(folder)
-                                },
-                                headlineContent = { Text(folder.substringAfterLast('/').ifBlank { vm.folderName }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                supportingContent = {
-                                    val missing = list.count { it.missingTags }
-                                    Text(
-                                        "${list.size} songs" + (if (missing > 0) " · $missing missing tags" else "") + " · " + (if (folder.isEmpty()) vm.folderName else "${vm.folderName}/$folder"),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
-                                leadingContent = {
-                                    Icon(
-                                        if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                        contentDescription = if (open) "Collapse" else "Expand",
-                                    )
-                                },
-                                trailingContent = {
-                                    TextButton(onClick = { vm.startBatch(list.map { it.path }, albumMode = true) }) {
-                                        Text("Tag album")
-                                    }
-                                },
-                            )
-                        }
-                        if (folder in expanded) {
-                            items(list, key = { "song:" + it.path }) { s ->
-                                SongRow(
-                                    song = s,
-                                    selecting = selection.isNotEmpty(),
-                                    selected = s.path in selection,
-                                    onClick = {
-                                        if (selection.isNotEmpty()) toggle(s.path) else vm.open(Screen.Editor(s.path))
-                                    },
-                                    onLongClick = { toggle(s.path) },
-                                    indent = true,
-                                )
-                            }
-                        }
-                        item(key = "div:$folder") { HorizontalDivider() }
                     }
                 }
             }

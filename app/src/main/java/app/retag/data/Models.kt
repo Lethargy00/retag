@@ -76,7 +76,8 @@ data class AlbumTracks(
 
 data class FileInfo(val path: String, val tags: TagData, val durationSec: Int, val hasCover: Boolean)
 
-data class Assignment(val path: String, val track: TrackInfo?, val confidence: Double)
+/** [manual] = the user picked this track themselves. */
+data class Assignment(val path: String, val track: TrackInfo?, val confidence: Double, val manual: Boolean = false)
 
 data class CoverOption(val label: String, val source: String, val thumb: String, val full: List<String>)
 
