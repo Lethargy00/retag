@@ -1,5 +1,8 @@
 package app.retag.ui
 
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.compose.foundation.Image
@@ -154,5 +157,21 @@ fun SwitchRow(text: String, checked: Boolean, enabled: Boolean = true, onChange:
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Column(modifier) {
         Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** Icons that aren't in the core Material icon set (paths from Material Icons, Apache 2.0). */
+object RetagIcons {
+    private fun icon(name: String, path: String): ImageVector =
+        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
+            .addPath(addPathNodes(path), fill = SolidColor(Color.Black))
+            .build()
+
+    val Folder: ImageVector by lazy {
+        icon("Folder", "M10,4H4c-1.1,0 -1.99,0.9 -1.99,2L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V8c0,-1.1 -0.9,-2 -2,-2h-8l-2,-2z")
+    }
+
+    val MusicNote: ImageVector by lazy {
+        icon("MusicNote", "M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z")
     }
 }

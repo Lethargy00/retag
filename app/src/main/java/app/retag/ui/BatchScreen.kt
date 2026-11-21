@@ -55,6 +55,11 @@ import app.retag.data.Assignment
 import app.retag.data.Store
 import app.retag.data.TagData
 import app.retag.data.Naming
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.retag.data.Prefs
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -563,15 +568,18 @@ private fun BusyAndError(b: BatchController) {
 /** One file's place after writing: folder levels below the music folder, and its file name. */
 private class Planned(val folders: List<String>, val name: String, val changed: Boolean, val order: Int)
 
+/** What's already on storage at a planned folder. */
+private class Existing(val exists: Boolean, val otherNames: Set<String>, val otherCount: Int)
+
 /** Shows (and lets you switch) renaming and Artist/Album folders, with the resulting folder tree. */
 @Composable
 private fun LayoutPreview(vm: AppViewModel, b: BatchController) {
     val rename = Prefs.renameOn
     val folders = Prefs.organizeOn
-    val plan = remember(b.assignments, b.items.toList(), b.files, rename, folders, Prefs.renamePattern, Prefs.folderPattern, b.overwrite) {
-        val out = b.assignments.map { a ->
-            val item = b.items.firstOrNull { it.key == a.path }
-            val cur = item?.path ?: a.path
+    val currentIds = b.items.map { it.path }
+    val raw = remember(b.assignments, currentIds, b.files, rename, folders, Prefs.renamePattern, Prefs.folderPattern, b.overwrite) {
+        b.assignments.map { a ->
+            val cur = b.items.firstOrNull { it.key == a.path }?.path ?: a.path
             val curName = Store.name(cur)
             val ext = curName.substringAfterLast('.', "")
             val curFolders = Store.relFolder(cur).split('/').filter { it.isNotBlank() }
@@ -587,19 +595,53 @@ private fun LayoutPreview(vm: AppViewModel, b: BatchController) {
                 Planned(f, n, f != curFolders || n != curName, disc * 1000 + track)
             }
         }
-        // Same name in the same folder: the app adds " (2)", " (3)"…
-        val seen = HashMap<String, Int>()
-        out.sortedWith(compareBy({ it.folders.joinToString("/").lowercase() }, { it.order }, { it.name.lowercase() })).map { p ->
-            val k = (p.folders + p.name).joinToString("/").lowercase()
-            val count = (seen[k] ?: 0) + 1
-            seen[k] = count
-            if (count == 1) {
-                p
-            } else {
-                val dot = p.name.lastIndexOf('.')
-                val nn = if (dot > 0) p.name.substring(0, dot) + " ($count)" + p.name.substring(dot) else p.name + " ($count)"
-                Planned(p.folders, nn, true, p.order)
+    }
+    val folderKeys = remember(raw) { raw.map { it.folders }.distinct() }
+
+    // Look at what's already in the target folders (other files are kept; names that clash get " (2)").
+    val existing by produceState<Map<List<String>, Existing>>(emptyMap(), folderKeys, currentIds) {
+        value = withContext(Dispatchers.IO) {
+            val mine = currentIds.toSet()
+            folderKeys.associateWith { levels ->
+                try {
+                    var id = Store.rootId()
+                    var found = true
+                    for (level in levels) {
+                        val next = Store.children(id).firstOrNull { it.isDir && it.name.equals(level, ignoreCase = true) }
+                        if (next == null) {
+                            found = false
+                            break
+                        }
+                        id = next.id
+                    }
+                    if (!found) {
+                        Existing(false, emptySet(), 0)
+                    } else {
+                        val others = Store.children(id).filter { !it.isDir && it.id !in mine && !it.name.startsWith(".") }
+                        Existing(true, others.mapTo(HashSet()) { it.name.lowercase() }, others.size)
+                    }
+                } catch (e: Exception) {
+                    Existing(false, emptySet(), 0)
+                }
             }
+        }
+    }
+
+    val plan = remember(raw, existing) {
+        val taken = HashMap<List<String>, MutableSet<String>>()
+        raw.sortedWith(compareBy({ it.folders.joinToString("/").lowercase() }, { it.order }, { it.name.lowercase() })).map { p ->
+            val used = taken.getOrPut(p.folders) { HashSet(existing[p.folders]?.otherNames ?: emptySet()) }
+            var name = p.name
+            if (name.lowercase() in used) {
+                val dot = name.lastIndexOf('.')
+                val base = if (dot > 0) name.substring(0, dot) else name
+                val ext = if (dot > 0) name.substring(dot) else ""
+                var n = 2
+                while ("$base ($n)$ext".lowercase() in used) n++
+                name = "$base ($n)$ext"
+            }
+            used.add(name.lowercase())
+            if (name == p.name) p else Planned(p.folders, name, true, p.order)
         }.groupBy { it.folders }
     }
 
@@ -609,34 +651,51 @@ private fun LayoutPreview(vm: AppViewModel, b: BatchController) {
             SwitchRow("Rename files  (${Prefs.renamePattern})", rename, !b.running) { Prefs.renameOn = it }
             SwitchRow("Put in folders  (${Prefs.folderPattern})", folders, !b.running) { Prefs.organizeOn = it }
             Text(
-                "These are the same switches as in Settings. Patterns can be changed there.",
+                "Same switches as in Settings, where the patterns can be changed. Existing folders are reused and " +
+                    "files already in them are never overwritten.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text("Result", style = MaterialTheme.typography.labelLarge)
             for ((path, files) in plan) {
                 val levels = listOf(vm.folderName.ifBlank { "Music" }) + path
+                val ex = existing[path]
                 levels.forEachIndexed { i, name ->
-                    Text(
-                        "    ".repeat(i) + "📁 " + name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (i == levels.lastIndex) FontWeight.Medium else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    val last = i == levels.lastIndex
+                    TreeRow(
+                        depth = i,
+                        icon = RetagIcons.Folder,
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        text = name,
+                        bold = last,
+                        badge = when {
+                            !last || i == 0 || ex == null -> null
+                            !ex.exists -> "new"
+                            else -> "exists"
+                        },
                     )
                 }
-                val indent = "    ".repeat(levels.size)
                 for (f in files) {
-                    Text(
-                        indent + "♪ " + f.name + if (f.changed) "" else "  (unchanged)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (f.changed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    TreeRow(
+                        depth = levels.size,
+                        icon = RetagIcons.MusicNote,
+                        iconTint = if (f.changed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = f.name,
+                        dim = !f.changed,
+                        badge = if (f.changed) null else "unchanged",
                     )
                 }
-                Spacer(Modifier.height(4.dp))
+                if (ex != null && ex.otherCount > 0) {
+                    TreeRow(
+                        depth = levels.size,
+                        icon = null,
+                        iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "+ ${ex.otherCount} file${if (ex.otherCount == 1) "" else "s"} already here, kept as they are",
+                        dim = true,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
             }
             if (!rename && !folders) {
                 Text(
@@ -644,6 +703,48 @@ private fun LayoutPreview(vm: AppViewModel, b: BatchController) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TreeRow(
+    depth: Int,
+    icon: ImageVector?,
+    iconTint: Color,
+    text: String,
+    bold: Boolean = false,
+    dim: Boolean = false,
+    badge: String? = null,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = (depth * 16).dp, top = 2.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
+        } else {
+            Spacer(Modifier.width(18.dp))
+        }
+        Text(
+            text,
+            style = if (bold) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+            fontWeight = if (bold) FontWeight.Medium else FontWeight.Normal,
+            color = if (dim) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (badge != null) {
+            Surface(
+                color = if (badge == "new") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(4.dp),
+            ) {
+                Text(badge, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
             }
         }
     }
