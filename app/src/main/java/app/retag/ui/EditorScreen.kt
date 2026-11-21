@@ -23,7 +23,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,7 +63,6 @@ import app.retag.data.Query
 import app.retag.data.Sources
 import app.retag.data.TagData
 import app.retag.data.TagIO
-import app.retag.net.Lrclib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,7 +85,6 @@ fun EditorScreen(vm: AppViewModel, path: String) {
     var busy by remember { mutableStateOf<String?>(null) }
     var showMatches by remember { mutableStateOf(false) }
     var showCovers by remember { mutableStateOf(false) }
-    var lyricsChoice by remember { mutableStateOf<Lrclib.Lyrics?>(null) }
 
     LaunchedEffect(path) {
         try {
@@ -163,26 +160,6 @@ fun EditorScreen(vm: AppViewModel, path: String) {
         }
     }
 
-    fun findLyrics() {
-        scope.launch {
-            busy = "Looking for lyrics…"
-            try {
-                val l = withContext(Dispatchers.IO) {
-                    Lrclib.find(tags.title, tags.artist, tags.album, loaded?.durationSec ?: 0)
-                }
-                when {
-                    l == null -> snack.showSnackbar("No lyrics found for this song")
-                    l.synced.isNotBlank() && l.plain.isNotBlank() -> lyricsChoice = l
-                    else -> tags = tags.copy(lyrics = l.synced.ifBlank { l.plain })
-                }
-            } catch (e: Exception) {
-                snack.showSnackbar("Lyrics lookup failed: ${e.message}")
-            } finally {
-                busy = null
-            }
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -234,13 +211,8 @@ fun EditorScreen(vm: AppViewModel, path: String) {
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { showMatches = true }, enabled = busy == null, modifier = Modifier.weight(1f)) {
-                    Text("Find tags online")
-                }
-                OutlinedButton(onClick = { findLyrics() }, enabled = busy == null && tags.title.isNotBlank(), modifier = Modifier.weight(1f)) {
-                    Text("Find lyrics")
-                }
+            Button(onClick = { showMatches = true }, enabled = busy == null, modifier = Modifier.fillMaxWidth()) {
+                Text("Find tags online")
             }
             busy?.let {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -293,30 +265,6 @@ fun EditorScreen(vm: AppViewModel, path: String) {
                 showCovers = false
             },
             onClose = { showCovers = false },
-        )
-    }
-    lyricsChoice?.let { l ->
-        AlertDialog(
-            onDismissRequest = { lyricsChoice = null },
-            title = { Text("Which lyrics?") },
-            text = {
-                Text(
-                    "Synced lyrics include timestamps, so players like Poweramp, Musicolet and Retro Music " +
-                        "can scroll them along with the song. Plain lyrics are just the text."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    tags = tags.copy(lyrics = l.synced)
-                    lyricsChoice = null
-                }) { Text("Synced") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    tags = tags.copy(lyrics = l.plain)
-                    lyricsChoice = null
-                }) { Text("Plain") }
-            },
         )
     }
 }

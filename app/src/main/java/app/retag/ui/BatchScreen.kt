@@ -104,10 +104,6 @@ private fun Options(b: BatchController) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             SwitchRow("Replace existing tags", b.overwrite, enabled) { b.overwrite = it }
             SwitchRow("Add cover art", b.fetchCover, enabled) { b.fetchCover = it }
-            SwitchRow("Add lyrics", b.fetchLyrics, enabled) { b.fetchLyrics = it }
-            if (b.fetchLyrics) {
-                SwitchRow("Prefer synced (LRC) lyrics", b.preferSynced, enabled) { b.preferSynced = it }
-            }
             if (!b.overwrite) {
                 Text(
                     "Only empty fields will be filled in.",

@@ -14,7 +14,6 @@ import app.retag.data.Sources
 import app.retag.data.TagData
 import app.retag.data.TagIO
 import app.retag.data.TrackInfo
-import app.retag.net.Lrclib
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,8 +49,6 @@ class BatchController(
 
     var overwrite by mutableStateOf(true)
     var fetchCover by mutableStateOf(true)
-    var fetchLyrics by mutableStateOf(true)
-    var preferSynced by mutableStateOf(true)
 
     // Album mode
     var albumQuery by mutableStateOf("")
@@ -148,14 +145,6 @@ class BatchController(
         if (fetchCover && (overwrite || ft.cover == null)) {
             val bytes = Sources.findCover(best, tags)
             if (bytes != null) cover = CoverChange.Set(bytes) else notes += "no cover found"
-        }
-        if (fetchLyrics && (overwrite || ft.tags.lyrics.isBlank())) {
-            val lyrics = try {
-                Lrclib.find(tags.title, tags.artist, tags.album, ft.durationSec)
-            } catch (e: Exception) {
-                null
-            }
-            if (lyrics != null) tags = tags.copy(lyrics = lyrics.pick(preferSynced)) else notes += "no lyrics found"
         }
         TagIO.write(path, tags, cover)
         val msg = "${tags.artist} – ${tags.title}" + (if (notes.isEmpty()) "" else " (${notes.joinToString(", ")})")
@@ -273,15 +262,7 @@ class BatchController(
                     try {
                         val written = withContext(Dispatchers.IO) {
                             val ft = TagIO.read(a.path)
-                            var tags = Matcher.merge(ft.tags, track.tags, overwrite)
-                            if (fetchLyrics && (overwrite || ft.tags.lyrics.isBlank())) {
-                                val l = try {
-                                    Lrclib.find(tags.title, tags.artist, tags.album, ft.durationSec)
-                                } catch (e: Exception) {
-                                    null
-                                }
-                                if (l != null) tags = tags.copy(lyrics = l.pick(preferSynced))
-                            }
+                            val tags = Matcher.merge(ft.tags, track.tags, overwrite)
                             val cover = if (coverBytes != null && (overwrite || ft.cover == null)) {
                                 CoverChange.Set(coverBytes)
                             } else {

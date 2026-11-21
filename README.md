@@ -1,12 +1,11 @@
 # Retag: a free, ad-free music tagger for Android
 
-An open-source alternative to AutomaTag. It finds the right tags, cover art and lyrics for your music files online and writes them into the files themselves.
+An open-source alternative to AutomaTag. It finds the right tags and cover art for your music files online and writes them into the files themselves.
 
 ## What it does
 
 - **Find tags online.** Searches MusicBrainz and the iTunes Store using a song's current tags or, if it has none, its file name (e.g. `01 - Artist - Title.mp3`). You tap the right match.
 - **Cover art.** Pick from Cover Art Archive and iTunes results, up to 1200×1200 px, or choose an image from your gallery.
-- **Lyrics.** Plain or time-synced (LRC) lyrics from LRCLIB, embedded in the file.
 - **Batch auto-tag.** Select many songs (long-press) and tap **Auto-tag**. Confident matches are saved one by one, and uncertain ones are skipped so you can fix them by hand.
 - **Tag a whole album.** In the **Folders** tab tap **Tag album**, or select songs and tap **As album**. Choose the release, check how files were matched to tracks, then write them all in one go.
 - **Edit many files at once.** Set album, artist, genre, year and cover on a whole selection, with optional automatic track numbering.
@@ -32,7 +31,7 @@ Open the folder in Android Studio and press Run. From a terminal: `./gradlew ass
 
 ## Notes
 
-- The data sources are free community/public APIs: MusicBrainz (about 1 request per second), iTunes Search (about 20 per minute) and LRCLIB. Batch tagging therefore takes a few seconds per song.
+- The data sources are free community/public APIs: MusicBrainz (about 1 request per second) and iTunes Search (about 20 per minute). Batch tagging therefore takes a few seconds per song.
 - After saving, the app asks Android to rescan the file so other music players see the new tags. Some players cache tags and need their own rescan.
 - Batch mode never guesses: a match below about 75% confidence (90% when the file has no artist) is skipped rather than written.
 - Tag writing uses [jaudiotagger](https://bitbucket.org/ijabz/jaudiotagger) (LGPL).

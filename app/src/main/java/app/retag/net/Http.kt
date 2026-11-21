@@ -10,7 +10,7 @@ import java.net.URLEncoder
 class HttpException(val code: Int, message: String) : IOException(message)
 
 object Http {
-    /** MusicBrainz and LRCLIB ask apps to identify themselves. */
+    /** MusicBrainz asks apps to identify themselves. */
     const val USER_AGENT = "Retag/1.0 (open-source Android music tagger)"
 
     fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
