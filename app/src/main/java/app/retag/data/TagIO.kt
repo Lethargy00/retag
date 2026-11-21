@@ -32,9 +32,29 @@ object TagIO {
         }
     }
 
-    fun read(path: String): FileTags {
+    /** [id] is a document ID from [Store]. jaudiotagger needs a real file, so it works on a temporary copy. */
+    fun read(id: String): FileTags {
+        val tmp = Store.copyToTemp(id)
+        try {
+            return readFile(tmp)
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    fun write(id: String, t: TagData, cover: CoverChange) {
+        val tmp = Store.copyToTemp(id)
+        try {
+            writeFile(tmp, t, cover)
+            Store.writeBack(id, tmp)
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private fun readFile(file: File): FileTags {
         init()
-        val af = AudioFileIO.read(File(path))
+        val af = AudioFileIO.read(file)
         val duration = try {
             af.audioHeader.trackLength
         } catch (e: Exception) {
@@ -70,10 +90,8 @@ object TagIO {
         return FileTags(data, cover, duration)
     }
 
-    fun write(path: String, t: TagData, cover: CoverChange) {
+    private fun writeFile(file: File, t: TagData, cover: CoverChange) {
         init()
-        val file = File(path)
-        if (!file.canWrite()) throw IllegalStateException("No permission to write this file")
         val af = AudioFileIO.read(file)
         val tag: Tag = af.tagOrCreateAndSetDefault
 

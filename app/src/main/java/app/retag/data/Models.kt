@@ -1,7 +1,5 @@
 package app.retag.data
 
-import java.io.File
-
 /** All the tag fields the app edits. Empty string = no value. */
 data class TagData(
     val title: String = "",
@@ -26,14 +24,16 @@ sealed interface CoverChange {
 
 class FileTags(val tags: TagData, val cover: ByteArray?, val durationSec: Int)
 
+/** A music file in the chosen folder. [path] is its document ID; [folder] is relative to the chosen folder. */
 data class Song(
     val path: String,
+    val fileName: String,
+    val folder: String,
     val title: String,
     val artist: String,
     val album: String,
+    val dateAdded: Long,
 ) {
-    val fileName: String get() = File(path).name
-    val folder: String get() = File(path).parent ?: ""
     val missingTags: Boolean get() = artist.isBlank() || album.isBlank()
 }
 

@@ -41,6 +41,8 @@ import app.retag.data.CoverChange
 import app.retag.data.Sources
 import app.retag.data.TagData
 import app.retag.data.TagIO
+import app.retag.data.Organizer
+import app.retag.data.Store
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,7 +63,7 @@ fun BulkEditScreen(vm: AppViewModel, paths: List<String>) {
     var result by remember { mutableStateOf<String?>(null) }
     var showCovers by remember { mutableStateOf(false) }
 
-    val sorted = remember(paths) { paths.sortedBy { File(it).name.lowercase() } }
+    val sorted = remember(paths) { paths.sortedBy { Store.name(it).lowercase() } }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -105,13 +107,13 @@ fun BulkEditScreen(vm: AppViewModel, paths: List<String>) {
                             track = if (numberTracks) (index + 1).toString() else current.track,
                             trackTotal = if (numberTracks) sorted.size.toString() else current.trackTotal,
                         )
-                        TagIO.write(path, t, coverChange)
-                        t
+                        t to Organizer.save(path, t, coverChange)
                     }
-                    vm.onSongWritten(path, written)
+                    vm.onSongWritten(path, written.second.id, written.first)
+                    written.second.note?.let { errors += "${Store.name(path)}: $it" }
                     ok++
                 } catch (e: Exception) {
-                    errors += "${File(path).name}: ${e.message ?: e.javaClass.simpleName}"
+                    errors += "${Store.name(path)}: ${e.message ?: e.javaClass.simpleName}"
                 }
                 progress = index + 1
             }

@@ -63,6 +63,8 @@ import app.retag.data.Query
 import app.retag.data.Sources
 import app.retag.data.TagData
 import app.retag.data.TagIO
+import app.retag.data.Organizer
+import app.retag.data.Store
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,7 +77,9 @@ fun EditorScreen(vm: AppViewModel, path: String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
-    val file = remember(path) { File(path) }
+    // The file's ID changes if saving renames or moves it.
+    var id by remember { mutableStateOf(path) }
+    val fileName = remember(id) { Store.name(id) }
 
     var loaded by remember { mutableStateOf<FileTags?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -88,7 +92,7 @@ fun EditorScreen(vm: AppViewModel, path: String) {
 
     LaunchedEffect(path) {
         try {
-            val ft = withContext(Dispatchers.IO) { TagIO.read(path) }
+            val ft = withContext(Dispatchers.IO) { TagIO.read(id) }
             loaded = ft
             tags = ft.tags
             cover = ft.cover
@@ -123,10 +127,18 @@ fun EditorScreen(vm: AppViewModel, path: String) {
             busy = "Saving…"
             try {
                 val toWrite = tags
-                withContext(Dispatchers.IO) { TagIO.write(path, toWrite, coverChange) }
+                val oldId = id
+                val saved = withContext(Dispatchers.IO) { Organizer.save(oldId, toWrite, coverChange) }
                 coverChange = CoverChange.Keep
-                vm.onSongWritten(path, toWrite)
-                snack.showSnackbar("Saved")
+                id = saved.id
+                vm.onSongWritten(oldId, saved.id, toWrite)
+                snack.showSnackbar(
+                    when {
+                        saved.note != null -> "Saved, ${saved.note}"
+                        saved.id != oldId -> "Saved as ${Store.name(saved.id)}"
+                        else -> "Saved"
+                    }
+                )
             } catch (e: Exception) {
                 snack.showSnackbar("Save failed: ${e.message ?: e.javaClass.simpleName}")
             } finally {
@@ -163,7 +175,7 @@ fun EditorScreen(vm: AppViewModel, path: String) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -244,7 +256,7 @@ fun EditorScreen(vm: AppViewModel, path: String) {
             )
             val dur = loaded?.durationSec ?: 0
             Text(
-                "${file.parent}\n${file.extension.uppercase()} · ${dur / 60}:${(dur % 60).toString().padStart(2, '0')}",
+                "${vm.folderName}/${Store.relFolder(id)}".trimEnd('/') + "\n${Store.extension(id).uppercase()} · ${dur / 60}:${(dur % 60).toString().padStart(2, '0')}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -253,7 +265,7 @@ fun EditorScreen(vm: AppViewModel, path: String) {
     }
 
     if (showMatches) {
-        val q = Matcher.queryFor(path, tags, loaded?.durationSec ?: 0)
+        val q = Matcher.queryFor(id, tags, loaded?.durationSec ?: 0)
         MatchesDialog(q, onPick = { applyCandidate(it) }, onClose = { showMatches = false })
     }
     if (showCovers) {

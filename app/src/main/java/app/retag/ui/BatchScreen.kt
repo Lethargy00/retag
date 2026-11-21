@@ -52,7 +52,7 @@ import app.retag.BatchItem
 import app.retag.Screen
 import app.retag.Status
 import app.retag.data.Assignment
-import java.io.File
+import app.retag.data.Store
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -205,7 +205,7 @@ private fun PerSongMode(vm: AppViewModel, b: BatchController) {
             }
             HorizontalDivider()
         }
-        items(b.items, key = { it.path }) { item ->
+        items(b.items, key = { it.key }) { item ->
             ItemRow(item) { if (!b.running || item.status != Status.Working) vm.open(Screen.Editor(item.path)) }
         }
     }
@@ -305,7 +305,7 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                 HorizontalDivider()
             }
             items(b.assignments, key = { it.path }) { a ->
-                val item = b.items.firstOrNull { it.path == a.path }
+                val item = b.items.firstOrNull { it.key == a.path }
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -316,7 +316,7 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                 ) {
                     StatusIcon(item?.status ?: Status.Pending)
                     Column(Modifier.weight(1f)) {
-                        Text(File(a.path).name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                        Text(Store.name(a.path), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                         val t = a.track
                         if (t != null) {
                             val disc = if (t.tags.disc.isNotBlank()) "${t.tags.disc}-" else ""
@@ -351,7 +351,7 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
     if (target != null && al != null) {
         AlertDialog(
             onDismissRequest = { pickingFor = null },
-            title = { Text(File(target.path).name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            title = { Text(Store.name(target.path), maxLines = 2, overflow = TextOverflow.Ellipsis) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     run {

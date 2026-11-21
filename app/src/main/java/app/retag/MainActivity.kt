@@ -1,11 +1,7 @@
 package app.retag
 
-import android.Manifest
-import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,7 +23,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.retag.ui.BatchScreen
@@ -35,6 +30,8 @@ import app.retag.ui.BulkEditScreen
 import app.retag.ui.EditorScreen
 import app.retag.ui.LibraryScreen
 import app.retag.ui.RetagTheme
+import app.retag.ui.SettingsScreen
+import app.retag.data.Store
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
@@ -53,14 +50,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        vm.refreshPermission()
+        vm.refreshAccess()
     }
 }
 
 @Composable
 fun App(vm: AppViewModel) {
-    if (!vm.hasPermission) {
-        PermissionScreen(onResult = { vm.refreshPermission() })
+    if (!vm.hasFolder) {
+        FolderScreen(onPicked = { vm.setFolder(it) })
         return
     }
     LaunchedEffect(Unit) {
@@ -74,17 +71,29 @@ fun App(vm: AppViewModel) {
             is Screen.Editor -> EditorScreen(vm, screen.path)
             is Screen.Batch -> BatchScreen(vm)
             is Screen.BulkEdit -> BulkEditScreen(vm, screen.paths)
+            is Screen.Settings -> SettingsScreen(vm)
+        }
+    }
+}
+
+/** Opens Android's folder picker. Returns a launcher; call launch() on it. */
+@Composable
+fun rememberFolderPicker(onPicked: (Uri) -> Unit): () -> Unit {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) onPicked(uri)
+    }
+    return {
+        try {
+            launcher.launch(Store.suggestedStart())
+        } catch (e: Exception) {
+            launcher.launch(null)
         }
     }
 }
 
 @Composable
-private fun PermissionScreen(onResult: () -> Unit) {
-    val ctx = LocalContext.current
-    val legacyLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { onResult() }
-
+private fun FolderScreen(onPicked: (Uri) -> Unit) {
+    val pick = rememberFolderPicker(onPicked)
     Column(
         Modifier
             .fillMaxSize()
@@ -93,26 +102,18 @@ private fun PermissionScreen(onResult: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Retag needs access to your music files", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text("Choose your music folder", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
-            "Tags are written directly into your audio files, so the app needs permission to change files on your storage. " +
-                "On the next screen, turn on \"Allow access to manage all files\" for Retag, then come back.",
+            "Retag only works inside the folder you pick, including its subfolders. " +
+                "On the next screen open the folder with your music (for example Music) and tap \"Use this folder\", then Allow.",
             textAlign = TextAlign.Center,
         )
-        Button(onClick = {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                try {
-                    ctx.startActivity(
-                        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}"))
-                    )
-                } catch (e: Exception) {
-                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                }
-            } else {
-                legacyLauncher.launch(
-                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                )
-            }
-        }) { Text("Grant access") }
+        Text(
+            "Android doesn't let apps pick the whole storage or the Download folder, so keep your music in a folder such as Music.",
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(onClick = pick) { Text("Choose folder") }
     }
 }

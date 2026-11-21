@@ -12,8 +12,8 @@ android {
         applicationId = "app.retag"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     // A fixed key so every build can be installed over the previous one.
