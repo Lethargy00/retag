@@ -367,11 +367,17 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
     if (target != null && al != null) {
         val used = b.assignments.filter { it.track != null && it.path != target.path }.associateBy({ it.track }, { it.path })
         val before = b.fileInfo(target.path)?.tags
+        val fileSec = b.fileInfo(target.path)?.durationSec?.takeIf { it > 0 }
         AlertDialog(
             onDismissRequest = { pickingFor = null },
             title = {
                 Column {
                     Text(Store.name(target.path), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Length of this file: " + (length(fileSec) ?: "unknown"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                     if (before != null) {
                         Text(
                             "Now: " + describe(before),
@@ -404,13 +410,13 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                     }
                     if (current != null) {
                         PickerHeader("This file now")
-                        TrackOption(current, owner = null, isCurrent = true) { pickingFor = null }
+                        TrackOption(current, owner = null, isCurrent = true, fileSec = fileSec) { pickingFor = null }
                     }
                     PickerHeader(if (free.isEmpty()) "No free tracks left" else "Free tracks (${free.size})")
-                    free.forEach { t -> TrackOption(t, owner = null, isCurrent = false) { pick(t) } }
+                    free.forEach { t -> TrackOption(t, owner = null, isCurrent = false, fileSec = fileSec) { pick(t) } }
                     if (taken.isNotEmpty()) {
                         PickerHeader("Already matched to another file (${taken.size})")
-                        taken.forEach { t -> TrackOption(t, owner = used[t], isCurrent = false) { pick(t) } }
+                        taken.forEach { t -> TrackOption(t, owner = used[t], isCurrent = false, fileSec = fileSec) { pick(t) } }
                     }
                 }
             },
@@ -431,10 +437,17 @@ private fun PickerHeader(text: String) {
     )
 }
 
-/** One track in the "pick a track" dialog. [owner] = the file it's matched to now, if another one. */
+/** "3:05", or null when unknown. */
+private fun length(sec: Int?): String? = sec?.takeIf { it > 0 }?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" }
+
+/**
+ * One track in the "pick a track" dialog. [owner] = the file it's matched to now, if another one.
+ * [fileSec] = the file's own length, to point out tracks that are about as long.
+ */
 @Composable
-private fun TrackOption(t: TrackInfo, owner: String?, isCurrent: Boolean, onClick: () -> Unit) {
-    val dur = t.durationSec?.let { " (${it / 60}:${(it % 60).toString().padStart(2, '0')})" }.orEmpty()
+private fun TrackOption(t: TrackInfo, owner: String?, isCurrent: Boolean, fileSec: Int?, onClick: () -> Unit) {
+    val dur = length(t.durationSec)?.let { " ($it)" }.orEmpty()
+    val diff = if (fileSec != null && t.durationSec != null && t.durationSec > 0) kotlin.math.abs(t.durationSec - fileSec) else null
     Column(
         Modifier
             .fillMaxWidth()
@@ -446,6 +459,11 @@ private fun TrackOption(t: TrackInfo, owner: String?, isCurrent: Boolean, onClic
             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
             color = if (owner != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
         )
+        when {
+            diff == null -> Unit
+            diff <= 3 -> Text("Same length as this file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            diff <= 10 -> Text("Close in length (${diff} s off)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+        }
         if (owner != null) {
             Text(
                 "On ${Store.name(owner)}. Picking it moves it here.",
@@ -524,7 +542,8 @@ private fun MatchRow(b: BatchController, a: Assignment, showAll: Boolean, onClic
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "Before: " + (before?.let(::describe) ?: "…"),
+                "Before: " + (before?.let(::describe) ?: "…") +
+                    (length(b.fileInfo(a.path)?.durationSec)?.let { " · $it" }.orEmpty()),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -532,7 +551,7 @@ private fun MatchRow(b: BatchController, a: Assignment, showAll: Boolean, onClic
             )
             if (a.track != null && after != null) {
                 Text(
-                    "After: " + trackLabel(after),
+                    "After: " + trackLabel(after) + (length(a.track.durationSec)?.let { " · $it" }.orEmpty()),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     maxLines = 2,

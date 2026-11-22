@@ -2,6 +2,13 @@
 
 What changed in each version of Retag. The section for a version is used as the description of its GitHub release.
 
+## v1.11.0
+
+**Song lengths on the album screen, to make matching by hand easier**
+- When you pick a track for a song, the top of the list shows how long your file is.
+- Tracks that are the same length as your file (within 3 seconds) say "Same length as this file". Tracks within 10 seconds say "Close in length" and how many seconds off they are.
+- In the song list on the album screen, "Before" shows your file's length and "After" shows the length of the track it's matched to, so a wrong match stands out.
+
 ## v1.10.0
 
 **Picking a track by hand on the album screen**
