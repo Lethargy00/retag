@@ -46,6 +46,8 @@ data class Candidate(
     val coverFull: List<String>,
     val releaseGroupId: String? = null,
     val score: Double = 0.0,
+    /** The original-language tags when [tags] were switched to English names; used for matching only. */
+    val nativeTags: TagData? = null,
 )
 
 /** A possible album/release for "tag as album". */
@@ -62,7 +64,8 @@ data class AlbumCandidate(
     val score: Double = 0.0,
 )
 
-data class TrackInfo(val tags: TagData, val durationSec: Int?)
+/** [nativeTitle]: the original-language title when [tags] has the English one; used for matching only. */
+data class TrackInfo(val tags: TagData, val durationSec: Int?, val nativeTitle: String = "")
 
 data class AlbumTracks(
     val source: String,

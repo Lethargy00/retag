@@ -71,6 +71,17 @@ fun SettingsScreen(vm: AppViewModel) {
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+            SectionLabel("Online lookups")
+            SwitchRow("Prefer English titles and names", Prefs.preferEnglish) { Prefs.preferEnglish = it }
+            Text(
+                "When an album or artist also has an English (or Latin-letter) version online, use that instead of the original script, " +
+                    "for example Hikaru Utada instead of 宇多田ヒカル. Matching your files still works with either.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             SectionLabel("Rename files")
             SwitchRow("Rename files when saving tags", Prefs.renameOn) { Prefs.renameOn = it }
             PatternField(

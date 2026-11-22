@@ -81,12 +81,15 @@ object Matcher {
     }
 
     fun score(c: Candidate, q: Query): Double {
-        val t = sim(c.tags.title, q.title)
+        // A file tagged in the original language should still match a result shown with English names.
+        val native = c.nativeTags
+        val t = max(sim(c.tags.title, q.title), native?.let { sim(it.title, q.title) } ?: 0.0)
         val d = durationScore(c.durationSec, q.durationSec)
         var s = if (q.artist.isBlank()) {
             0.65 * t + 0.35 * d
         } else {
-            0.5 * t + 0.3 * sim(c.tags.artist, q.artist) + 0.2 * d
+            val a = max(sim(c.tags.artist, q.artist), native?.let { sim(it.artist, q.artist) } ?: 0.0)
+            0.5 * t + 0.3 * a + 0.2 * d
         }
         // Small nudge towards the album the file already says it's from.
         if (q.album.isNotBlank() && sim(c.tags.album, q.album) >= 0.8) s += 0.03
@@ -142,7 +145,8 @@ object Matcher {
         val pairs = ArrayList<Pair3>()
         for (i in files.indices) for (j in tracks.indices) {
             val tr = tracks[j]
-            var s = 0.6 * sim(titles[i], tr.tags.title)
+            val titleSim = max(sim(titles[i], tr.tags.title), if (tr.nativeTitle.isNotBlank()) sim(titles[i], tr.nativeTitle) else 0.0)
+            var s = 0.6 * titleSim
             val tn = tr.tags.track.toIntOrNull()
             val td = tr.tags.disc.toIntOrNull()
             if (numbers[i] != null && numbers[i] == tn && (discs[i] == null || td == null || discs[i] == td)) s += 0.25

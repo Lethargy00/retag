@@ -3,6 +3,7 @@ package app.retag.net
 import app.retag.data.AlbumCandidate
 import app.retag.data.AlbumTracks
 import app.retag.data.Candidate
+import app.retag.data.Prefs
 import app.retag.data.TagData
 import app.retag.data.TrackInfo
 import org.json.JSONArray
@@ -18,7 +19,8 @@ object ITunes {
 
     private fun fetch(params: String, country: String): JSONArray {
         limiter.acquire()
-        return Http.getJson("https://itunes.apple.com/$params&country=$country")?.optJSONArray("results")
+        val lang = if (Prefs.preferEnglish) "&lang=en_us" else ""
+        return Http.getJson("https://itunes.apple.com/$params&country=$country$lang")?.optJSONArray("results")
             ?: JSONArray()
     }
 

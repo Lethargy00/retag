@@ -2,6 +2,25 @@
 
 What changed in each version of Retag. The section for a version is used as the description of its GitHub release.
 
+## v1.9.0
+
+**Select many songs by dragging**
+- Hold a song to select it, then keep holding and drag up or down to select every song in between.
+- Drag near the top or bottom edge and the list scrolls by itself, faster the closer you get to the edge.
+- If you start on a song that's already selected, dragging unselects instead.
+- You feel a short buzz when selecting starts.
+
+**Prefer English titles and names** (new setting, on by default)
+- When MusicBrainz has an English (or Latin-letter) version of an album, Find album uses its album and track titles instead of the original script.
+- Artist names in another script are replaced by their English name when one is known, for example Hikaru Utada instead of 宇多田ヒカル.
+- The same applies when looking up a single song or auto-tagging, and iTunes is asked for English names.
+- Matching your files still works whether they're tagged in English or in the original script.
+- English versions of albums are labelled "English track list" in the album search results.
+- You can turn this off in Settings → Online lookups.
+
+**Fixes**
+- The song count next to the filter and sort buttons always stays on screen instead of being pushed off the edge.
+
 ## v1.8.0
 
 **Faster start-up, especially with big libraries**

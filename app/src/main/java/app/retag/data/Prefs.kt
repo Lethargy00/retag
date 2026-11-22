@@ -29,6 +29,7 @@ object Prefs {
     private var _renamePattern by mutableStateOf(DEFAULT_RENAME)
     private var _organizeOn by mutableStateOf(false)
     private var _folderPattern by mutableStateOf(DEFAULT_FOLDERS)
+    private var _preferEnglish by mutableStateOf(true)
 
     fun init(ctx: Context) {
         sp = ctx.getSharedPreferences("retag", Context.MODE_PRIVATE)
@@ -38,6 +39,7 @@ object Prefs {
         _renamePattern = sp.getString("renamePattern", null) ?: DEFAULT_RENAME
         _organizeOn = sp.getBoolean("organizeOn", false)
         _folderPattern = sp.getString("folderPattern", null) ?: DEFAULT_FOLDERS
+        _preferEnglish = sp.getBoolean("preferEnglish", true)
     }
 
     var treeUri: Uri?
@@ -80,5 +82,13 @@ object Prefs {
         set(v) {
             _folderPattern = v
             sp.edit().putString("folderPattern", v).apply()
+        }
+
+    /** Use English titles and artist names from online lookups when they exist. */
+    var preferEnglish: Boolean
+        get() = _preferEnglish
+        set(v) {
+            _preferEnglish = v
+            sp.edit().putBoolean("preferEnglish", v).apply()
         }
 }

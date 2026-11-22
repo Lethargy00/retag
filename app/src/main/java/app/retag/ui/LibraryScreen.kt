@@ -3,7 +3,6 @@ package app.retag.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +76,23 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.composed
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -108,6 +124,10 @@ fun LibraryScreen(vm: AppViewModel) {
     fun toggle(path: String) {
         if (path in selection) selection.remove(path) else selection.add(path)
     }
+
+    val listState = rememberLazyListState()
+    /** True from the long-press until the finger lifts, so the row's tap on release is ignored. */
+    var dragSelecting by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -238,41 +258,47 @@ fun LibraryScreen(vm: AppViewModel) {
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
-            Row(
-                Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilterChip(
-                    selected = onlyMissing,
-                    onClick = { onlyMissing = !onlyMissing },
-                    label = { Text("Missing tags") },
-                )
-                Box {
-                    AssistChip(
-                        onClick = { sortMenu = true },
-                        label = { Text(sort.label, maxLines = 1) },
-                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = onlyMissing,
+                        onClick = { onlyMissing = !onlyMissing },
+                        label = { Text("Missing tags") },
                     )
-                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                        for (option in SortBy.entries) {
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                leadingIcon = { if (option == sort) Icon(Icons.Default.Check, contentDescription = null) },
-                                onClick = {
-                                    Prefs.sort = option
-                                    sortMenu = false
-                                },
-                            )
+                    Box {
+                        AssistChip(
+                            onClick = { sortMenu = true },
+                            label = { Text(sort.label, maxLines = 1) },
+                            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+                        )
+                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                            for (option in SortBy.entries) {
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    leadingIcon = { if (option == sort) Icon(Icons.Default.Check, contentDescription = null) },
+                                    onClick = {
+                                        Prefs.sort = option
+                                        sortMenu = false
+                                    },
+                                )
+                            }
                         }
                     }
                 }
+                // Outside the scrolling chips, so the count always stays on screen.
                 Text(
-                    "${filtered.size} songs",
+                    if (filtered.size == 1) "1 song" else "${filtered.size} songs",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp, end = 16.dp),
                 )
             }
 
@@ -286,14 +312,31 @@ fun LibraryScreen(vm: AppViewModel) {
                 vm.scannedOnce && songs.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text("No music files found. Supported: MP3, M4A, FLAC, OGG, OPUS, WMA, WAV, AIFF, DSF.")
                 }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(
+                    Modifier
+                        .fillMaxSize()
+                        .dragToSelect(
+                            listState = listState,
+                            songs = filtered,
+                            selection = selection,
+                            onActive = { dragSelecting = it },
+                        ),
+                    state = listState,
+                ) {
                     vm.loadingDetail?.let { d ->
-                        item { Text(d, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+                        item(key = "__detail") { Text(d, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
                     }
-                    if (selection.isEmpty() && filtered.isNotEmpty()) {
-                        item {
+                    // Always there (only the text changes), so the list doesn't jump under your finger when selecting starts.
+                    if (filtered.isNotEmpty()) {
+                        item(key = "__hint") {
                             Text(
-                                "Tap a song to edit it. Long-press to select several, then Find album to match them to an album.",
+                                if (selection.isEmpty()) {
+                                    "Tap a song to edit it. Hold a song to select it, and keep holding while you drag up or down to select more."
+                                } else {
+                                    "Tap songs to add or remove them, or hold and drag to select a range."
+                                },
+                                maxLines = 2,
+                                minLines = 2,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -306,9 +349,13 @@ fun LibraryScreen(vm: AppViewModel) {
                             selecting = selection.isNotEmpty(),
                             selected = s.path in selection,
                             onClick = {
-                                if (selection.isNotEmpty()) toggle(s.path) else vm.open(Screen.Editor(s.path))
+                                when {
+                                    dragSelecting -> Unit // the finger lifting after a hold-to-select
+                                    selection.isNotEmpty() -> toggle(s.path)
+                                    else -> vm.open(Screen.Editor(s.path))
+                                }
                             },
-                            onLongClick = { toggle(s.path) },
+                            onSelect = { toggle(s.path) },
                         )
                     }
                 }
@@ -329,14 +376,14 @@ fun LibraryScreen(vm: AppViewModel) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SongRow(
     song: Song,
     selecting: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    /** For accessibility services; touch uses the list's hold-and-drag. */
+    onSelect: () -> Unit,
     indent: Boolean = false,
 ) {
     val subtitle = if (song.missingTags) {
@@ -346,7 +393,14 @@ private fun SongRow(
     }
     ListItem(
         modifier = Modifier
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            // Holding is handled by the list (dragToSelect), so holding and dragging can select many songs.
+            .semantics {
+                onLongClick(label = "Select") {
+                    onSelect()
+                    true
+                }
+            }
+            .clickable(onClick = onClick)
             .padding(start = if (indent) 16.dp else 0.dp),
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
@@ -427,4 +481,106 @@ private fun OrganizeDialog(count: Int, onConfirm: (rename: Boolean, folders: Boo
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * Hold a song to select it; keep holding and drag up or down to select (or, if you started on a
+ * selected song, unselect) every song in between. Near the top or bottom edge the list scrolls by itself.
+ */
+private fun Modifier.dragToSelect(
+    listState: LazyListState,
+    songs: List<Song>,
+    selection: SnapshotStateList<String>,
+    onActive: (Boolean) -> Unit,
+): Modifier = composed {
+    val haptics = LocalHapticFeedback.current
+    val edge = with(LocalDensity.current) { 72.dp.toPx() }
+    val maxStep = with(LocalDensity.current) { 14.dp.toPx() }
+    val currentSongs by rememberUpdatedState(songs)
+    val index = remember(songs) { HashMap<String, Int>(songs.size * 2).apply { songs.forEachIndexed { i, s -> put(s.path, i) } } }
+    val currentIndex by rememberUpdatedState(index)
+    val currentOnActive by rememberUpdatedState(onActive)
+
+    // Drag state
+    var anchor by remember { mutableStateOf(-1) }
+    var last by remember { mutableStateOf(-1) }
+    var selecting by remember { mutableStateOf(true) }
+    var before by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pointerY by remember { mutableFloatStateOf(0f) }
+    var scrollSpeed by remember { mutableFloatStateOf(0f) }
+
+    fun songAt(y: Float): Int? {
+        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { y >= it.offset && y < it.offset + it.size } ?: return null
+        return (item.key as? String)?.let { currentIndex[it] }
+    }
+
+    /** Selection = what was selected before the drag, plus (or minus) everything from the anchor to [to]. */
+    fun extendTo(to: Int) {
+        if (anchor < 0 || to == last) return
+        val list = currentSongs
+        if (list.isEmpty()) return
+        last = to
+        val lo = minOf(anchor, to).coerceIn(0, list.lastIndex)
+        val hi = maxOf(anchor, to).coerceIn(0, list.lastIndex)
+        val range = LinkedHashSet<String>()
+        for (i in lo..hi) range += list[i].path
+        val result = if (selecting) {
+            val kept = LinkedHashSet(before)
+            kept.addAll(range)
+            kept.toList()
+        } else {
+            before.filter { it !in range }
+        }
+        selection.clear()
+        selection.addAll(result)
+    }
+
+    fun follow() {
+        songAt(pointerY)?.let { extendTo(it) }
+    }
+
+    LaunchedEffect(scrollSpeed) {
+        if (scrollSpeed == 0f) return@LaunchedEffect
+        while (isActive) {
+            listState.scrollBy(scrollSpeed)
+            follow()
+            delay(16)
+        }
+    }
+
+    fun stop() {
+        anchor = -1
+        last = -1
+        scrollSpeed = 0f
+        currentOnActive(false)
+    }
+
+    pointerInput(Unit) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = { offset ->
+                val start = songAt(offset.y) ?: return@detectDragGesturesAfterLongPress
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                currentOnActive(true)
+                anchor = start
+                last = -1
+                pointerY = offset.y
+                selecting = currentSongs[start].path !in selection
+                before = selection.toList()
+                extendTo(start)
+            },
+            onDrag = { change, _ ->
+                if (anchor < 0) return@detectDragGesturesAfterLongPress
+                pointerY = change.position.y
+                val height = listState.layoutInfo.viewportSize.height.toFloat()
+                scrollSpeed = when {
+                    pointerY < edge -> -maxStep * ((edge - pointerY) / edge).coerceIn(0.1f, 1f)
+                    pointerY > height - edge -> maxStep * ((pointerY - (height - edge)) / edge).coerceIn(0.1f, 1f)
+                    else -> 0f
+                }
+                follow()
+            },
+            onDragEnd = { stop() },
+            onDragCancel = { stop() },
+        )
+    }
 }
