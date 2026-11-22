@@ -20,10 +20,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
 enum class Status { Pending, Working, Done, Skipped, Failed }
@@ -211,13 +217,36 @@ class BatchController(
         }
     }
 
-    private fun readFiles(): List<FileInfo> = paths.map { p ->
-        try {
-            val ft = TagIO.read(p)
-            FileInfo(p, ft.tags, ft.durationSec, ft.cover != null)
-        } catch (e: Exception) {
-            FileInfo(p, TagData(), 0, false)
-        }
+    /** Each file's (last modified, size) when [files] was read, to tell if it has changed since. */
+    private val readStamps = ConcurrentHashMap<String, Pair<Long, Long>>()
+
+    /** Reads a few files at the same time; each one is copied in full, so this is the slow part of opening an album. */
+    private suspend fun readFiles(): List<FileInfo> = coroutineScope {
+        val gate = Semaphore(3)
+        paths.map { p ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
+                    try {
+                        val stamp = Store.stat(p)
+                        val ft = TagIO.read(p)
+                        if (stamp != null) readStamps[p] = stamp else readStamps.remove(p)
+                        FileInfo(p, ft.tags, ft.durationSec, ft.cover != null)
+                    } catch (e: Exception) {
+                        readStamps.remove(p)
+                        FileInfo(p, TagData(), 0, false)
+                    }
+                }
+            }
+        }.awaitAll()
+    }
+
+    /** Tags and "has a cover" for writing: from [files] if the file hasn't changed since, otherwise read again. */
+    private fun currentTags(key: String, path: String): Pair<TagData, Boolean> {
+        val known = fileInfo(key)
+        val stamp = readStamps[key]
+        if (known != null && stamp != null && path == key && Store.stat(path) == stamp) return known.tags to known.hasCover
+        val ft = TagIO.read(path)
+        return ft.tags to (ft.cover != null)
     }
 
     fun searchAlbums() {
@@ -298,9 +327,10 @@ class BatchController(
                     update(a.path, Status.Working, "Writing…")
                     try {
                         val (written, saved) = withContext(Dispatchers.IO) {
-                            val ft = TagIO.read(path)
-                            val tags = Matcher.merge(ft.tags, track.tags, overwrite)
-                            val cover = if (coverBytes != null && (overwrite || ft.cover == null)) {
+                            // Saves copying each file once more just to read the tags shown on this screen.
+                            val (before, hasCover) = currentTags(a.path, path)
+                            val tags = Matcher.merge(before, track.tags, overwrite)
+                            val cover = if (coverBytes != null && (overwrite || !hasCover)) {
                                 CoverChange.Set(coverBytes)
                             } else {
                                 CoverChange.Keep

@@ -31,22 +31,26 @@ object Thumbs {
     private fun key(id: String): String =
         MessageDigest.getInstance("SHA-1").digest(id.toByteArray()).joinToString("") { "%02x".format(it) }
 
-    private fun jpg(id: String) = File(dir, key(id) + ".jpg")
-    private fun none(id: String) = File(dir, key(id) + ".none")
+    private fun jpg(key: String) = File(dir, "$key.jpg")
+    private fun none(key: String) = File(dir, "$key.none")
+
+    private fun fromDisk(id: String, key: String): Bitmap? {
+        val file = jpg(key)
+        if (!file.exists()) return null
+        return BitmapFactory.decodeFile(file.path)?.also { memory.put(id, it) }
+    }
 
     suspend fun load(id: String): Bitmap? {
         memory.get(id)?.let { return it }
         return withContext(Dispatchers.IO) {
+            val key = key(id)
+            // Thumbnails made before are quick to load, so they don't wait behind files still being read.
+            fromDisk(id, key)?.let { return@withContext it }
+            if (none(key).exists()) return@withContext null
             gate.withPermit {
                 memory.get(id)?.let { return@withPermit it }
-                val file = jpg(id)
-                if (file.exists()) {
-                    BitmapFactory.decodeFile(file.path)?.let {
-                        memory.put(id, it)
-                        return@withPermit it
-                    }
-                }
-                if (none(id).exists()) return@withPermit null
+                fromDisk(id, key)?.let { return@withPermit it }
+                if (none(key).exists()) return@withPermit null
                 val bytes = try {
                     embedded(id)
                 } catch (e: Exception) {
@@ -54,11 +58,14 @@ object Thumbs {
                 }
                 val bmp = bytes?.let { decodeSmall(it) }
                 if (bmp == null) {
-                    none(id).createNewFile()
+                    none(key).createNewFile()
                     return@withPermit null
                 }
                 try {
-                    FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+                    // Written under another name first, so a half-written file is never read.
+                    val tmp = File(dir, "$key.tmp")
+                    FileOutputStream(tmp).use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+                    tmp.renameTo(jpg(key))
                 } catch (e: Exception) {
                     // memory cache still works
                 }
@@ -103,8 +110,9 @@ object Thumbs {
     fun invalidate(vararg ids: String) {
         for (id in ids) {
             memory.remove(id)
-            jpg(id).delete()
-            none(id).delete()
+            val key = key(id)
+            jpg(key).delete()
+            none(key).delete()
             versions[id] = (versions[id] ?: 0) + 1
         }
     }

@@ -15,11 +15,18 @@ import app.retag.data.Store
 import app.retag.data.TagData
 import app.retag.data.TagIO
 import app.retag.data.Thumbs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 sealed interface Screen {
@@ -34,6 +41,11 @@ sealed interface Screen {
 class OrganizeState(val done: Int, val total: Int, val running: Boolean, val result: String? = null)
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
+    private companion object {
+        /** Files read at the same time on the first scan. */
+        const val TAG_READERS = 4
+    }
+
     var hasFolder by mutableStateOf(Store.hasAccess())
         private set
     var folderName by mutableStateOf(if (hasFolder) Store.rootName() else "")
@@ -90,23 +102,48 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val generation = ++loadGeneration
         loadJob = viewModelScope.launch {
             try {
+                // Show last time's list straight away; the folder walk below then brings it up to date.
+                if (songs.isEmpty()) {
+                    val cached = withContext(Dispatchers.IO) { Library.cached() }
+                    if (cached.isNotEmpty()) songs = cached
+                }
+                if (songs.isNotEmpty()) loadingDetail = "Checking for new or changed files…"
                 val listing = withContext(Dispatchers.IO) {
-                    Library.list().also { l -> Thumbs.invalidate(*l.stale.map { it.id }.toTypedArray()) }
+                    Library.list().also { l ->
+                        Thumbs.invalidate(*l.changed.toTypedArray())
+                        Library.persist()
+                    }
                 }
                 songs = listing.songs
                 scannedOnce = true
-                // Fill in tags for new or changed files, a chunk at a time so the list updates.
+                // Fill in tags for new or changed files, a few at a time, in chunks so the list updates.
                 val stale = listing.stale
-                for ((n, chunk) in stale.chunked(25).withIndex()) {
+                val gate = Semaphore(TAG_READERS)
+                var done = 0
+                var lastSave = System.currentTimeMillis()
+                for (chunk in stale.chunked(32)) {
                     if (!isActive) break
-                    loadingDetail = "Reading tags: ${n * 25} of ${stale.size}"
+                    loadingDetail = "Reading tags: $done of ${stale.size}"
+                    val byId = songs.associateBy { it.path }
                     val fresh = withContext(Dispatchers.IO) {
-                        val byId = songs.associateBy { it.path }
-                        chunk.mapNotNull { s -> byId[s.id]?.let { Library.readMeta(it, s) } }.associateBy { it.path }
-                    }
+                        coroutineScope {
+                            chunk.map { s ->
+                                async { byId[s.id]?.let { song -> gate.withPermit { Library.readMeta(song, s) } } }
+                            }.awaitAll()
+                        }
+                    }.filterNotNull().associateBy { it.path }
                     songs = songs.map { fresh[it.path] ?: it }
+                    done += chunk.size
+                    // Save progress now and then, so closing the app half-way doesn't mean starting over.
+                    if (System.currentTimeMillis() - lastSave > 4000) {
+                        withContext(Dispatchers.IO) { Library.persist() }
+                        lastSave = System.currentTimeMillis()
+                    }
                 }
                 withContext(Dispatchers.IO) { Library.persist() }
+            } catch (e: CancellationException) {
+                withContext(NonCancellable + Dispatchers.IO) { Library.persist() }
+                throw e
             } catch (e: Exception) {
                 scannedOnce = true
                 hasFolder = Store.hasAccess()
@@ -129,13 +166,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Call on the main thread after a file has been rewritten (and maybe renamed or moved to [newId]). */
     fun onSongWritten(oldId: String, newId: String, tags: TagData) {
-        Library.updated(oldId, newId, tags)
-        Thumbs.invalidate(oldId, newId)
         val name = Store.name(newId)
+        val folder = Store.relFolder(newId)
+        Library.updated(oldId, newId, tags, name, folder)
+        Thumbs.invalidate(oldId, newId)
         val updated = Song(
             path = newId,
             fileName = name,
-            folder = Store.relFolder(newId),
+            folder = folder,
             title = tags.title.ifBlank { name.substringBeforeLast('.') },
             artist = tags.artist,
             album = tags.album,
@@ -149,7 +187,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // Let other music apps see the new tags.
             Store.mediaScan(newId)
         }
-        schedulePersist()
+        viewModelScope.launch {
+            // Remember the file as it is now, so the next start doesn't read it again.
+            val stat = withContext(Dispatchers.IO) { Store.stat(newId) }
+            if (stat != null) Library.written(newId, stat.first, stat.second)
+            schedulePersist()
+        }
     }
 
     private fun schedulePersist() {

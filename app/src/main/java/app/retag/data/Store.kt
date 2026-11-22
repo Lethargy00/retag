@@ -100,6 +100,15 @@ object Store {
         return out
     }
 
+    /** (last modified, size) of one file, as the folder listing reports them. Null if it can't be read. */
+    fun stat(id: String): Pair<Long, Long>? = try {
+        app.contentResolver.query(uri(id), arrayOf(Document.COLUMN_LAST_MODIFIED, Document.COLUMN_SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0) && !c.isNull(1)) c.getLong(0) to c.getLong(1) else null
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     private fun queryName(id: String): String? = try {
         app.contentResolver.query(uri(id), arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
