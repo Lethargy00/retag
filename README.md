@@ -24,7 +24,7 @@ GitHub builds the app for you for free:
    - **With git:** `git init && git add . && git commit -m "Retag" && git branch -M main && git remote add origin https://github.com/YOU/retag.git && git push -u origin main`
    - **In the browser:** on the new repo page click **uploading an existing file** and drag in *everything inside* this folder. On a Mac, press **Cmd+Shift+.** in Finder to show the hidden `.github` folder, which must be included.
 3. Open the **Actions** tab. A **Build APK** run starts automatically and takes about 5 minutes.
-4. When it's green, open the repo's **Releases** (right-hand side of the main page). Download the **Retag-1.x.apk** file (the number is the version, e.g. Retag-1.8.apk) on your phone and open it. Android asks you to allow installing from your browser the first time.
+4. When it's green, open the repo's **Releases** (right-hand side of the main page). Download the **Retag-x.y.z.apk** file from the newest release (e.g. Retag-1.8.0.apk; each release lists what changed) on your phone and open it. Android asks you to allow installing from your browser the first time.
 5. Open Retag and choose your music folder (for example **Music**). The app only sees and changes files inside that folder. Android doesn't allow picking the whole storage or the Download folder.
 
 Every later push to `main` builds a new release (other branches only build). Updates install over the old version because each build is signed with the same key (`app/retag.keystore`). That key sits in this repo, so keep the repo private if you don't want others able to sign "updates" for your copy.
