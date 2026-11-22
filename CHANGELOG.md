@@ -2,6 +2,12 @@
 
 What changed in each version of Retag. The section for a version is used as the description of its GitHub release.
 
+## v1.11.1
+
+**Back button on the album screen**
+- With an album open, Back (the phone's back gesture or the arrow at the top) now takes you to the album search results, so you can pick a different release. Pressing Back again goes to the song list.
+- While tags are being written, Back still goes straight to the song list, and writing keeps going in the background.
+
 ## v1.11.0
 
 **Song lengths on the album screen, to make matching by hand easier**

@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
 import app.retag.data.Prefs
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import kotlin.math.roundToInt
@@ -80,6 +81,10 @@ fun BatchScreen(vm: AppViewModel) {
         onDispose { view.keepScreenOn = false }
     }
 
+    // With an album open, Back first returns to the album search results, then to the song list.
+    val backToResults = b != null && b.albumMode && b.album != null && !b.running
+    BackHandler(enabled = backToResults) { b?.clearAlbum() }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -93,7 +98,7 @@ fun BatchScreen(vm: AppViewModel) {
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { vm.back() }) {
+                    IconButton(onClick = { if (backToResults) b?.clearAlbum() else vm.back() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
