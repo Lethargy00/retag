@@ -25,19 +25,24 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
 
+      # The download is named with the version (Retag-1.8.apk); the installed app is still just "Retag".
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk Retag.apk
+        run: |
+          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          echo "APK_NAME=Retag-$VERSION.apk" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          cp app/build/outputs/apk/release/app-release.apk "Retag-$VERSION.apk"
 
       - uses: actions/upload-artifact@v4
         with:
           name: Retag-apk
-          path: Retag.apk
+          path: ${{ env.APK_NAME }}
 
       - name: Publish as a release (easy download on your phone)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Retag build ${{ github.run_number }}
-          files: Retag.apk
+          name: Retag ${{ env.VERSION }} (build ${{ github.run_number }})
+          files: ${{ env.APK_NAME }}
           make_latest: true
