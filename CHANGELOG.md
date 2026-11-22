@@ -2,6 +2,15 @@
 
 What changed in each version of Retag. The section for a version is used as the description of its GitHub release.
 
+## v1.10.0
+
+**Picking a track by hand on the album screen**
+- The track list is now split into sections, so it's easy to see what's left:
+  - **This file now**: the track the file has at the moment, if any.
+  - **Free tracks**: tracks no other file has yet.
+  - **Already matched to another file**: tracks another file already has, with that file's name. Picking one still moves it to this file.
+- When every track is taken, the list says "No free tracks left".
+
 ## v1.9.0
 
 **Select many songs by dragging**

@@ -54,6 +54,7 @@ import app.retag.Status
 import app.retag.data.Assignment
 import app.retag.data.Store
 import app.retag.data.TagData
+import app.retag.data.TrackInfo
 import app.retag.data.Naming
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.Color
@@ -393,33 +394,23 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
                             .padding(vertical = 10.dp),
                         color = MaterialTheme.colorScheme.error,
                     )
-                    al.tracks.forEach { t ->
-                        val dur = t.durationSec?.let { " (${it / 60}:${(it % 60).toString().padStart(2, '0')})" }.orEmpty()
-                        val owner = used[t]
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    b.reassign(target.path, t)
-                                    pickingFor = null
-                                }
-                                .padding(vertical = 8.dp),
-                        ) {
-                            Text(
-                                trackLabel(t.tags) + dur,
-                                fontWeight = if (target.track == t) FontWeight.Bold else FontWeight.Normal,
-                                color = if (owner != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                            )
-                            if (owner != null) {
-                                Text(
-                                    "Now on ${Store.name(owner)}; picking it moves it here",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
+                    // Split the tracks so the ones still free are easy to find.
+                    val current = target.track
+                    val free = al.tracks.filter { it != current && used[it] == null }
+                    val taken = al.tracks.filter { it != current && used[it] != null }
+                    fun pick(t: TrackInfo) {
+                        b.reassign(target.path, t)
+                        pickingFor = null
+                    }
+                    if (current != null) {
+                        PickerHeader("This file now")
+                        TrackOption(current, owner = null, isCurrent = true) { pickingFor = null }
+                    }
+                    PickerHeader(if (free.isEmpty()) "No free tracks left" else "Free tracks (${free.size})")
+                    free.forEach { t -> TrackOption(t, owner = null, isCurrent = false) { pick(t) } }
+                    if (taken.isNotEmpty()) {
+                        PickerHeader("Already matched to another file (${taken.size})")
+                        taken.forEach { t -> TrackOption(t, owner = used[t], isCurrent = false) { pick(t) } }
                     }
                 }
             },
@@ -429,6 +420,43 @@ private fun AlbumMode(vm: AppViewModel, b: BatchController) {
 }
 
 private const val UNSURE = 0.6
+
+@Composable
+private fun PickerHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
+    )
+}
+
+/** One track in the "pick a track" dialog. [owner] = the file it's matched to now, if another one. */
+@Composable
+private fun TrackOption(t: TrackInfo, owner: String?, isCurrent: Boolean, onClick: () -> Unit) {
+    val dur = t.durationSec?.let { " (${it / 60}:${(it % 60).toString().padStart(2, '0')})" }.orEmpty()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+    ) {
+        Text(
+            trackLabel(t.tags) + dur,
+            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+            color = if (owner != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+        )
+        if (owner != null) {
+            Text(
+                "On ${Store.name(owner)}. Picking it moves it here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
 
 private fun trackLabel(t: TagData): String {
     fun n(s: String) = s.substringBefore('/').trim().toIntOrNull() ?: 0
